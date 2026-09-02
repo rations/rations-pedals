@@ -1,0 +1,35 @@
+// Rations Pedals — version and identity strings, configured per plug-in by CMake.
+// Copyright (c) 2026 rations. MIT licence (see LICENSE).
+//
+// Generated from src/common/version.h.in into each plug-in's own binary directory, so that
+// stringPluginName and stringOriginalFilename name THAT pedal. Everything else is the project's
+// and is the same in all five.
+#pragma once
+
+#include "pluginterfaces/base/fplatform.h"
+
+#define MAJOR_VERSION_STR "@RPEDALS_VERSION_MAJOR@"
+#define MAJOR_VERSION_INT @RPEDALS_VERSION_MAJOR@
+#define SUB_VERSION_STR "@RPEDALS_VERSION_MINOR@"
+#define SUB_VERSION_INT @RPEDALS_VERSION_MINOR@
+#define RELEASE_NUMBER_STR "@RPEDALS_VERSION_PATCH@"
+#define RELEASE_NUMBER_INT @RPEDALS_VERSION_PATCH@
+#define BUILD_NUMBER_STR "@RPEDALS_VERSION_BUILD@"
+#define BUILD_NUMBER_INT @RPEDALS_VERSION_BUILD@
+
+#define FULL_VERSION_STR                                                                           \
+    MAJOR_VERSION_STR "." SUB_VERSION_STR "." RELEASE_NUMBER_STR "." BUILD_NUMBER_STR
+#define VERSION_STR MAJOR_VERSION_STR "." SUB_VERSION_STR "." RELEASE_NUMBER_STR
+
+#define stringPluginName "@RPEDALS_PLUGIN_NAME@"
+#define stringOriginalFilename "@RPEDALS_PLUGIN_NAME@.vst3"
+#if SMTG_PLATFORM_64
+#define stringFileDescription stringPluginName " (64Bit)"
+#else
+#define stringFileDescription stringPluginName
+#endif
+#define stringCompanyName "rations"
+#define stringCompanyWeb "https://github.com/rations"
+#define stringCompanyEmail "mailto:ehqcar@proton.me"
+#define stringLegalCopyright "MIT licence; see NOTICE for the components redistributed with it"
+#define stringLegalTrademarks "VST is a trademark of Steinberg Media Technologies GmbH"

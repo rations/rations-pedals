@@ -296,9 +296,12 @@ private:
         s.bypassed = mBypassNorm > 0.5;
         s.draggingKnob = mDragKnob;
         if (mController) {
-            mBindingText = describeBinding(mController->midiBinding());
+            const MidiBinding b = mController->midiBinding();
+            s.learned = b.learned();
+            // Described only when there is a binding to describe. describeBinding() has an answer
+            // for the unlearned case too, and the strip deliberately does not draw it.
+            mBindingText = s.learned ? describeBinding(b) : std::string();
             s.bindingText = mBindingText.c_str();
-            s.learned = mController->midiBinding().learned();
             s.armed = mController->armedMidiRow() == 0;
         }
         return s;
@@ -430,7 +433,7 @@ private:
 
     double mNorm[kParamCount] = {};
     double mBypassNorm = 0.0;
-    std::string mBindingText = "not learned";
+    std::string mBindingText; // empty until the footswitch is learned
 
     double mScale = 1.0, mOffX = 0.0, mOffY = 0.0;
     int mDevW = geo::kWindowW, mDevH = geo::kWindowH;

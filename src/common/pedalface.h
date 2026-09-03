@@ -29,9 +29,9 @@ struct FaceState {
     int draggingKnob = -1; // index into the pedal's knobs, or -1; shows that knob's readout
 
     // The strip under the enclosure.
-    const char *bindingText = "not learned";
-    bool learned = false; // draws the Clear button
-    bool armed = false;   // the Learn button reads "Listening"
+    const char *bindingText = ""; // read only when `learned`; an unlearned row prints nothing
+    bool learned = false;         // draws the Clear button and the binding text
+    bool armed = false;           // the Learn button reads "Listening"
 };
 
 // The pedal's value as the face prints it: the plain number at the spec's precision, its unit if

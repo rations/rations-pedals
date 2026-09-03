@@ -232,8 +232,9 @@ constexpr int kStripLabelSize = 20;
 
 // "MIDI", not "Footswitch". The strip has exactly one row and the footswitch is the only thing
 // on the pedal it could be about, so the long word bought nothing and cost the binding text its
-// room: at 468 units wide, "Footswitch" plus the two buttons left 64 units for "not learned",
-// which is a clip. The static_assert on kStripValueW below is what caught that.
+// room: at 468 units wide, "Footswitch" plus the two buttons left 64 units for the text beside
+// them, which is a clip. The static_assert on kStripValueW below is what caught that. The
+// longest string the slot has to hold is the listening prompt, not a binding.
 constexpr int kStripLabelX = 24;
 constexpr int kStripLabelW = 62; // "MIDI", Michroma at kStripLabelSize
 constexpr int kStripValueX = kStripLabelX + kStripLabelW + 12;

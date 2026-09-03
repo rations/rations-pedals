@@ -302,14 +302,20 @@ void drawStrip(Canvas &c, const FaceState &s, double scale)
     c.setColor(geo::kDimColor);
     c.drawString("MIDI", static_cast<float>(geo::kStripLabelX), baseline);
 
-    // What the footswitch is bound to, or that it is not. Accent while a row is listening,
-    // because that is the one state the user is waiting on.
-    c.setFont(Font::Body);
-    c.setFontSize(static_cast<float>(geo::kStripTextSize));
-    c.setColor(s.armed ? geo::kAccent : (s.learned ? geo::kTextColor : geo::kDimColor));
-    const std::string fit = c.clipToWidth(s.armed ? "press a footswitch..." : s.bindingText,
-                                          static_cast<float>(geo::kStripValueW));
-    c.drawString(fit.c_str(), static_cast<float>(geo::kStripValueX), baseline);
+    // What the footswitch is bound to, while it is bound to something. Accent while the row is
+    // listening, because that is the one state the user is waiting on.
+    //
+    // An unlearned row prints NOTHING here. The Learn button sitting beside it, with no Clear
+    // next to it, is already the whole statement that the footswitch is bound to nothing; a line
+    // of grey text saying so as well is the same fact twice on a strip that has one row.
+    const char *text = s.armed ? "press a footswitch..." : (s.learned ? s.bindingText : nullptr);
+    if (text && *text) {
+        c.setFont(Font::Body);
+        c.setFontSize(static_cast<float>(geo::kStripTextSize));
+        c.setColor(s.armed ? geo::kAccent : geo::kTextColor);
+        const std::string fit = c.clipToWidth(text, static_cast<float>(geo::kStripValueW));
+        c.drawString(fit.c_str(), static_cast<float>(geo::kStripValueX), baseline);
+    }
 
     drawStripButton(c, stripLearnRect(), s.armed ? geo::kStripListenLabel : geo::kStripLearnLabel,
                     s.armed);

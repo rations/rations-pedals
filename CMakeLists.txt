@@ -333,6 +333,9 @@ endforeach()
 add_executable(panelrender
     ${RPEDALS_ROOT}/tools/panelrender.cpp
     ${RPEDALS_ROOT}/src/common/pedalface.cpp
+    # ...and the description layer, so the strip's binding text is measured against the real font
+    # like every other string. It brings in pluginterfaces' typedefs and nothing else.
+    ${RPEDALS_ROOT}/src/common/midilearn.cpp
 )
 target_include_directories(panelrender PRIVATE
     ${RPEDALS_ROOT}/src ${RPEDALS_ROOT}/deps ${RPEDALS_ROOT}/vst3sdk)

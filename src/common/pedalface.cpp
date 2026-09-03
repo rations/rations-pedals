@@ -308,7 +308,7 @@ void drawStrip(Canvas &c, const FaceState &s, double scale)
     // An unlearned row prints NOTHING here. The Learn button sitting beside it, with no Clear
     // next to it, is already the whole statement that the footswitch is bound to nothing; a line
     // of grey text saying so as well is the same fact twice on a strip that has one row.
-    const char *text = s.armed ? "press a footswitch..." : (s.learned ? s.bindingText : nullptr);
+    const char *text = s.armed ? geo::kStripArmedLabel : (s.learned ? s.bindingText : nullptr);
     if (text && *text) {
         c.setFont(Font::Body);
         c.setFontSize(static_cast<float>(geo::kStripTextSize));

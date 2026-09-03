@@ -44,7 +44,11 @@ public:
         : Steinberg::NativePlugView(static_cast<Steinberg::Vst::EditController *>(controller)),
           mController(controller)
     {
-        Steinberg::ViewRect size(0, 0, geo::kWindowW, geo::kWindowH);
+        // Logical units are the art's; the window opens at geo::kDefaultScale of them. The scale
+        // lives here and in onResized, never in a geometry constant.
+        Steinberg::ViewRect size(
+            0, 0, static_cast<Steinberg::int32>(std::lround(geo::kWindowW * geo::kDefaultScale)),
+            static_cast<Steinberg::int32>(std::lround(geo::kWindowH * geo::kDefaultScale)));
         setRect(size);
         for (int i = 0; i < kParamCount; ++i)
             mNorm[i] = pedalNorm(kParams[i], kParams[i].def);
@@ -137,6 +141,7 @@ protected:
                 // button with no way back would leave the plug-in waiting for a message the user
                 // has decided not to send.
                 mController->armMidiLearn(mController->armedMidiRow() == 0 ? -1 : 0);
+                mMidiPollTicks = 1; // ask on the next tick, not half a second from now
                 invalidate();
             }
             return;
@@ -236,8 +241,27 @@ protected:
         return false;
     }
 
+    // A LEARN COMPLETES ON THE AUDIO THREAD, which can neither send a message nor call the
+    // controller, so nothing pushes the answer to the editor: the processor stores the binding,
+    // stops listening, and the strip goes on saying "Listening" until something asks. While the
+    // row is armed the editor asks — about twice a second — and stops the moment the processor
+    // reports it is no longer armed. An idle editor sends nothing. This is rations-amp's
+    // pollMidi() and it was dropped in the port; the symptom was a strip stuck on "Listening"
+    // after a footswitch had in fact been learned.
+    void pollMidi()
+    {
+        if (!mController || mController->armedMidiRow() < 0)
+            return;
+        if (--mMidiPollTicks > 0)
+            return;
+        mMidiPollTicks = kMidiPollTicks;
+        mController->requestMidiTable();
+    }
+
     void onTick() SMTG_OVERRIDE
     {
+        pollMidi();
+
         // The armed row is the one thing that changes without a parameter changing: the processor
         // clears it the moment it learns something, and the strip has to stop saying "listening".
         if (!mController)
@@ -435,8 +459,15 @@ private:
     double mBypassNorm = 0.0;
     std::string mBindingText; // empty until the footswitch is learned
 
-    double mScale = 1.0, mOffX = 0.0, mOffY = 0.0;
-    int mDevW = geo::kWindowW, mDevH = geo::kWindowH;
+    double mScale = geo::kDefaultScale, mOffX = 0.0, mOffY = 0.0;
+    int mDevW = static_cast<int>(std::lround(geo::kWindowW * geo::kDefaultScale));
+    int mDevH = static_cast<int>(std::lround(geo::kWindowH * geo::kDefaultScale));
+
+    // 15 ticks of the editor's 33 ms timer, so the strip catches up within about half a second of
+    // the stomp that taught it. rations-amp's number, for its reason: while a row is armed this is
+    // a message every 500 ms, and while one is not it is nothing at all.
+    static constexpr int kMidiPollTicks = 15;
+    int mMidiPollTicks = 0;
 
     int mDragKnob = -1;  // grid slot, for the readout the painter draws
     int mDragIndex = -1; // index into kParams

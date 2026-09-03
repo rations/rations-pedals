@@ -20,6 +20,7 @@
 
 #include "common/pedalface.h"
 #include "common/pedalgeometry.h"
+#include "common/midilearn.h"
 #include "common/pedalids.h"
 
 // The five traits structs, so the name and the art key come from the same place the plug-ins take
@@ -274,6 +275,96 @@ void auditText(Canvas &c, const Face &f)
     }
 }
 
+//--- the strip's own text ----------------------------------------------------------------------
+// The face is measured above; the strip below it was not, and that is exactly where the first
+// clipped string in this project shipped: the prompt that says a row is listening overran its slot
+// at every scale, and only a screenshot showed it. The strip is identical on all five pedals, so
+// this runs once.
+void auditStrip(Canvas &c)
+{
+    printf("  strip\n");
+
+    c.setFont(Font::Title);
+    c.setFontSize(static_cast<float>(geo::kStripLabelSize));
+    const float labelW = c.stringWidth("MIDI");
+    printf("    label  %-16s %6.1f / %6.1f units%s\n", "MIDI", labelW,
+           static_cast<float>(geo::kStripLabelW),
+           labelW > geo::kStripLabelW ? "   <- CLIPPED" : "");
+    if (labelW > geo::kStripLabelW)
+        fail("strip: 'MIDI' is %.1f units wide, and kStripLabelW reserves %d before the binding "
+             "text starts",
+             labelW, geo::kStripLabelW);
+
+    // The value slot holds two different things and has to hold the wider: the prompt while a row
+    // is listening, and the description of whatever it learned.
+    c.setFont(Font::Body);
+    c.setFontSize(static_cast<float>(geo::kStripTextSize));
+    const float slot = static_cast<float>(geo::kStripValueW);
+    const float armedW = c.stringWidth(geo::kStripArmedLabel);
+    printf("    value  %-16s %6.1f / %6.1f units%s\n", geo::kStripArmedLabel, armedW, slot,
+           armedW > slot ? "   <- CLIPPED" : "");
+    if (armedW > slot)
+        fail("strip: the listening prompt '%s' is %.1f units wide in a %.1f-unit slot",
+             geo::kStripArmedLabel, armedW, slot);
+
+    // EVERY binding this row can hold, not a representative one. There are only 2304 of them and
+    // the widest is not obvious by inspection: it depends on the note name, the octave's sign and
+    // the channel number all at once.
+    std::string worst;
+    float worstW = 0.0f;
+    auto consider = [&](const MidiBinding &b) {
+        const std::string text = describeBinding(b);
+        const float w = c.stringWidth(text.c_str());
+        if (w > worstW) {
+            worstW = w;
+            worst = text;
+        }
+    };
+    for (int d = 0; d < 128; ++d) {
+        MidiBinding cc;
+        cc.msg = MidiMsg::ControlChange;
+        cc.channel = kMidiAnyChannel;
+        cc.data1 = d;
+        consider(cc);
+        MidiBinding pc = cc;
+        pc.msg = MidiMsg::ProgramChange;
+        consider(pc);
+        for (int ch = 0; ch < 16; ++ch) {
+            MidiBinding note;
+            note.msg = MidiMsg::NoteOn;
+            note.channel = ch;
+            note.data1 = d;
+            consider(note);
+        }
+    }
+    printf("    value  %-16s %6.1f / %6.1f units%s   (widest of 2304 bindings)\n", worst.c_str(),
+           worstW, slot, worstW > slot ? "   <- CLIPPED" : "");
+    if (worstW > slot)
+        fail("strip: the binding '%s' is %.1f units wide in a %.1f-unit slot", worst.c_str(),
+             worstW, slot);
+
+    // The buttons letter their labels at the strip's label size and clip to the button less the
+    // padding drawStripButton uses.
+    c.setFont(Font::Body);
+    c.setFontSize(static_cast<float>(geo::kStripLabelSize));
+    struct Button {
+        const char *label;
+        int width;
+    };
+    const Button buttons[] = {{geo::kStripLearnLabel, geo::kStripLearnW},
+                              {geo::kStripListenLabel, geo::kStripLearnW},
+                              {geo::kStripClearLabel, geo::kStripClearW}};
+    for (const Button &b : buttons) {
+        const float w = c.stringWidth(b.label);
+        const float room = static_cast<float>(b.width - 8);
+        printf("    button %-16s %6.1f / %6.1f units%s\n", b.label, w, room,
+               w > room ? "   <- CLIPPED" : "");
+        if (w > room)
+            fail("strip: the button label '%s' is %.1f units wide in a %.1f-unit button", b.label,
+                 w, room);
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -367,6 +458,8 @@ int main(int argc, char **argv)
         drawStrip(c, st, scale);
 
         auditText(c, f);
+        if (i == 0)
+            auditStrip(c);
 
         if (!outDir.empty()) {
             const std::string png = outDir + "/" + f.key + ".png";

@@ -43,9 +43,18 @@ constexpr int kStripH = 70;
 constexpr int kWindowW = kArtW;
 constexpr int kWindowH = kArtH + kStripH;
 
-// How far the editor may be scaled down before the lettering stops being legible. Same floor as
-// rations-amp's, which was measured there against the same two fonts.
-constexpr double kMinScale = 0.66;
+// WHERE THE EDITOR OPENS, and how far down it may be dragged. The art is 468 x 691 and the
+// geometry below is written in those units, but the window does NOT open at 1:1: 468 x 761 is a
+// large window to give one stompbox, and a stompbox is a small object.
+//
+// Half, and the floor is the same number, because half is measured rather than chosen. At 0.5 the
+// enclosure is drawn 234 units across, which is WIDER than the 190 the same art is drawn at on
+// rations-amp's pedalboard — where these five pedals have been read, and their knobs turned, for
+// as long as they have existed. Every legend here is therefore larger on screen than the one it
+// was ported from. A host that wants the art at 1:1 can still drag the window there, and up to
+// twice that.
+constexpr double kDefaultScale = 0.5;
+constexpr double kMinScale = kDefaultScale;
 constexpr double kMaxScale = 2.0;
 
 //--------------------------------------------------------------------------------------------
@@ -235,20 +244,30 @@ constexpr int kStripLabelSize = 20;
 // room: at 468 units wide, "Footswitch" plus the two buttons left 64 units for the text beside
 // them, which is a clip. The static_assert on kStripValueW below is what caught that. The
 // longest string the slot has to hold is the listening prompt, not a binding.
-constexpr int kStripLabelX = 24;
+constexpr int kStripLabelX = 16;
 constexpr int kStripLabelW = 62; // "MIDI", Michroma at kStripLabelSize
-constexpr int kStripValueX = kStripLabelX + kStripLabelW + 12;
+constexpr int kStripValueX = kStripLabelX + kStripLabelW + 10;
 
+// THE BUTTONS ARE AS NARROW AS THEIR LABELS ALLOW, and the insets as small, because everything
+// they do not take belongs to the binding text. The widest of the 2304 bindings a row can hold is
+// a note with a sharp, a negative octave and a two-digit channel — "Note G#-2 ch 10", 160 units —
+// and the first layout here gave the slot 142 and clipped it. tools/panelrender measures all 2304
+// against kStripValueW on every build; these five numbers are what it takes to pass with room.
 constexpr int kStripButtonH = kStripRowH;
-constexpr int kStripLearnW = 100;
-constexpr int kStripClearW = 84;
+constexpr int kStripLearnW = 96; // "Listening" is 83 units and clips to this less 8
+constexpr int kStripClearW = 64; // "Clear" is 46
 constexpr int kStripButtonGap = 10;
-constexpr int kStripRightInset = 24;
+constexpr int kStripRightInset = 16;
 constexpr int kStripLearnX = kWindowW - kStripRightInset - kStripLearnW;
 constexpr int kStripClearX = kStripLearnX - kStripButtonGap - kStripClearW;
 constexpr const char *kStripLearnLabel = "Learn";
 constexpr const char *kStripListenLabel = "Listening";
 constexpr const char *kStripClearLabel = "Clear";
+// What the row says while it is waiting. tools/panelrender measures it against kStripValueW on
+// every build, which is how the first version — "press a footswitch..." — was caught: it rendered
+// 201 units into a 142-unit slot and reached the user as "press a foot...". The slot is 184 now
+// and this is 143, which is the kind of margin a different fontconfig cannot close.
+constexpr const char *kStripArmedLabel = "press a switch";
 // Where the binding text may run to before it is clipped: up to the Clear button, which is the
 // leftmost thing on the right-hand side even when it is not drawn.
 constexpr int kStripValueW = kStripClearX - kStripButtonGap - kStripValueX;

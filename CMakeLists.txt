@@ -325,6 +325,38 @@ foreach(_pedal IN LISTS RPEDALS_PEDALS)
 endforeach()
 
 # ---------------------------------------------------------------------------
+# loadall — the five bundles in ONE process, which is the situation the visibility rules in this
+# project exist for and the one thing no per-bundle check can see. It is a host, so it loads the
+# built bundles rather than linking the plug-in code, and it needs the SDK's module loader for
+# whichever platform it is built on. See tools/loadall.cpp.
+# ---------------------------------------------------------------------------
+if(RPEDALS_WINDOWS)
+    set(RPEDALS_HOST_MODULE_LOADER
+        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_win32.cpp)
+else()
+    set(RPEDALS_HOST_MODULE_LOADER
+        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_linux.cpp)
+endif()
+
+add_executable(loadall
+    ${RPEDALS_ROOT}/tools/loadall.cpp
+    ${RPEDALS_HOST_MODULE_LOADER}
+    ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
+    # The footswitch is switched on through a real input parameter queue, which is the only route
+    # a plug-in has to accept. Not in sdk_hosting.
+    ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/parameterchanges.cpp
+    ${VST3_SDK_DIR}/public.sdk/samples/vst-hosting/editorhost/source/usediids.cpp
+)
+target_include_directories(loadall PRIVATE ${RPEDALS_ROOT}/src ${VST3_SDK_DIR})
+target_link_libraries(loadall PRIVATE sdk_hosting)
+target_compile_features(loadall PRIVATE cxx_std_17)
+target_compile_options(loadall PRIVATE -Wall -Wextra)
+# Nothing to load until they are built.
+foreach(_pedal IN LISTS RPEDALS_PEDALS)
+    add_dependencies(loadall ${RPEDALS_TARGET_${_pedal}})
+endforeach()
+
+# ---------------------------------------------------------------------------
 # panelrender — the offline face renderer and the geometry audit. Links PedalsGfx and nothing
 # else: no VST3, no X11, no Win32, which is what lets it be the first thing built and run when a
 # Windows toolchain is being brought up, and what lets scripts/makedist-windows.sh diff its output

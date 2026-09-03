@@ -136,7 +136,19 @@ runs two offline checks that need no host, no audio device and no display:
   `--reference`, against a stream file the native build wrote with `--dump`, and compared sample
   by sample instead.
 - **`panelrender`** — re-measures the enclosure art, renders every legend in the real font and
-  fails if any of them would be clipped or would overlap another control.
+  fails if any of them would be clipped or would overlap another control, including the MIDI
+  strip's own text and every one of the 2304 bindings its row can hold.
+
+There is a third check that neither of those can be, because it is about the five together:
+
+```sh
+build/loadall build/VST3/Release/Rations*.vst3
+```
+
+loads all five into **one process at once**, keeps them all loaded, and runs audio through each of
+them interleaved. Five sibling plug-ins in one host is the situation that punishes a shared symbol
+or a shared static, and it is invisible to every check that looks at one bundle at a time — the SDK
+validator included. Both release scripts run it over the bundles they are about to ship.
 
 And the SDK's own validator, over each bundle:
 

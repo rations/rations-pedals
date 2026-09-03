@@ -19,8 +19,8 @@
 # WHAT THIS GATES ON, per bundle: the architecture folder and the inner DLL's name; the bundle's
 # own art and nobody else's; the import list (proving -static held); the export list (exactly the
 # three entry points, catching a .drectve leak); the SDK validator under Wine. Then, once, for the
-# whole build: the DSP compared against the native build sample by sample, and the five faces
-# compared against the native render pixel by pixel.
+# whole build: all five loaded into one process at once, the DSP compared against the native build
+# sample by sample, and the five faces compared against the native render pixel by pixel.
 #
 # Environment:
 #   WINEPREFIX               defaults to ~/.wine-rations-pedals — a prefix of its own, because a
@@ -273,6 +273,21 @@ else
     fi
     printf '  %-16s %s\n' "${name}.vst3" "$(printf '%s' "$VALIDATOR_OUT" | grep -E '^Result:')"
   done
+
+  # THE GATE THE PER-BUNDLE CHECKS CANNOT BE, run under Wine on the staged bundles: all five
+  # loaded into one process at once, each processing audio while the other four are live. The
+  # symbol collision this guards against is a Linux one, but a shared static, a resource path
+  # resolved through the wrong module or a factory that is not re-entrant are not, and this is the
+  # only thing on either platform that would see them.
+  echo "loading all five in one process"
+  WIN_BUNDLES=()
+  for pedal in "${PEDALS[@]}"; do
+    WIN_BUNDLES+=("$(winepath -w "$PKGDIR/${TARGET[$pedal]}.vst3")")
+  done
+  if ! wine "$BUILD/loadall.exe" "${WIN_BUNDLES[@]}" 2>&1 | sed 's/^/  /'; then
+    echo "the five bundles do not coexist in one process under Wine." >&2
+    exit 1
+  fi
 
   # The two comparisons below both need a NATIVE build of this same tree to compare against.
   if [ ! -x "$NATIVE_BUILD/pedalcheck" ] || [ ! -x "$NATIVE_BUILD/panelrender" ]; then

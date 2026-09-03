@@ -212,6 +212,30 @@ for pedal in "${PEDALS[@]}"; do
   fi
 done
 
+# --- the five together, in one process --------------------------------------
+# THE GATE THE PER-BUNDLE CHECKS CANNOT BE. Everything above is asked of one bundle at a time, and
+# so is the SDK validator; the failure this project is most exposed to — five siblings sharing a
+# symbol or a static — only appears when more than one is loaded. tools/loadall loads all five at
+# once, keeps them all loaded, and runs audio through each of them interleaved a block at a time.
+# It is run against the STAGED bundles, which are the stripped ones that ship, rather than the
+# build tree's.
+#
+# It is not a DAW and does not replace loading them in one; that stays a release gate a person
+# runs. It is the part of it that runs on every release, here, with no display and no audio device.
+if [ ! -x "$BUILD/loadall" ]; then
+  echo "loadall was not built; it is the only check that loads all five at once." >&2
+  exit 1
+fi
+echo "loading all five in one process"
+LOADALL_ARGS=()
+for pedal in "${PEDALS[@]}"; do
+  LOADALL_ARGS+=("$PKGDIR/${TARGET[$pedal]}.vst3")
+done
+if ! "$BUILD/loadall" "${LOADALL_ARGS[@]}" | sed 's/^/  /'; then
+  echo "the five bundles do not coexist in one process." >&2
+  exit 1
+fi
+
 # --- licence, attribution, launchers ----------------------------------------
 cp "$REPO/NOTICE" "$REPO/LICENSE" "$REPO/README.md" "$PKGDIR/"
 

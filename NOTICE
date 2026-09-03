@@ -1,0 +1,202 @@
+Rations Pedals — five VST3 stompboxes for Linux and Windows
+Copyright (c) 2026 rations
+
+The five plug-ins (Boost, Chorus, Flanger, Delay, Reverb) were lifted out of the
+author's own Rations amp head, where they were the pedalboard page. Rations
+Pedals itself — the VST3 integration under src/common/ and src/plugins/, the
+pedal DSP under src/pedals/, the graphics stack under src/gfx/, the platform
+views under src/platform/ and the tools under tools/ — is released under the MIT
+Licence; see LICENSE. The third-party components it links, vendors and
+redistributes are covered by the licences below.
+
+-------------------------------------------------------------------------------
+
+The following components are used under the MIT Licence:
+
+  VST 3 SDK 3.8.0        https://github.com/steinbergmedia/vst3sdk
+  Copyright (c) 2025 Steinberg Media Technologies GmbH
+
+  Since version 3.7.10 the SDK is distributed under the MIT Licence; the full
+  text is retained in the SDK's LICENSE.txt. VST is a trademark of Steinberg
+  Media Technologies GmbH, registered in Europe and other countries.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+  AudioDSPTools             https://github.com/sdatkinson/AudioDSPTools
+  Copyright (c) 2022, 2023 Steven Atkinson
+
+  NOT linked, and not present in this tree as a library. Two things from it are
+  reproduced in src/dsp/sample.h: the DSP_SAMPLE typedef from dsp/dsp.h, and the
+  four-line Catmull-Rom interpolator dsp::_CubicInterpolation from Resample.h,
+  which the pedals' fractional delay lines read through. They are reproduced
+  rather than depended on because AudioDSPTools would bring NeuralAmpModelerCore
+  and Eigen behind it, and there is no neural code in this project. The
+  arithmetic is byte-identical to the original and is frozen: the pedals'
+  bit-identity with the amp they came out of depends on the same rounding.
+
+  BigBubbleMuff (haiku/source/dsp)
+  Copyright (c) 2026 BigBubbleMuff contributors
+
+  Vendored as deps/bbm/Oversampler.h, Filters.h and AudioMath.h. Oversampler.h
+  is the 4x half-band polyphase-IIR oversampler the Boost pedal's nonlinear
+  solver runs inside; its coefficients were solved by a minimax filter designer
+  and its measured figures are recorded beside each table in the file.
+  Filters.h is a TPT one-pole section; AudioMath.h supplies a linear parameter
+  smoother and a NaN guard.
+
+  A note on why the per-file grant governs. That project's top-level COPYING is
+  GNU GPL version 3, because its Linux build links JUCE. Its haiku/ subtree,
+  from which these three files come, carries its own MIT LICENSE, and every file
+  in it declares SPDX-License-Identifier: MIT in its own header. That subtree is
+  framework-free by construction -- it is described in its own comments as "the
+  Linux engine with the framework taken out" -- and includes nothing GPL, so the
+  GPLv3 at the repository root is the licence of the JUCE-linked aggregate, not
+  of these files. The author of Rations Pedals is also the rights-holder of that
+  work and has confirmed this reading. This is the same relicensing-of-own-work
+  situation recorded below for the art scripts.
+
+  Not taken from that project: DiodeClipper.h, TransistorStage.h, Netlist.h and
+  ToneStack.h, all of which encode Big Muff Pi component values and topology.
+  The Boost pedal's clipper is a different circuit and is written against the
+  Yeh 2009 analysis instead.
+
+-------------------------------------------------------------------------------
+
+The following components are used under the zlib Licence:
+
+  NanoSVG                   https://github.com/memononen/nanosvg
+  Copyright (c) 2013-14 Mikko Mononen
+
+  Vendored as src/gfx/nanosvg/nanosvg.h and nanosvgrast.h, the SVG rasteriser
+  of the graphics stack these plug-ins inherited. The five pedal faces draw no
+  vector icon -- every control on them is PNG art or text -- so nothing in the
+  shipped bundles calls it today; it is retained because it is part of that
+  stack rather than an addition to it. The zlib licence text is retained in full
+  at the top of each header.
+
+  WDL                       https://www.cockos.com/wdl/
+  Copyright (c) 2005 and later Cockos Incorporated
+
+  Vendored as deps/wdl/verbengine.h, heapbuf.h, denormal.h and wdltypes.h.
+  verbengine.h is the Reverb pedal's engine; it is in turn derived from the
+  public-domain Freeverb by Jezar at Dreampoint (June 2000,
+  http://www.dreampoint.co.uk), as its own header records. heapbuf.h is the
+  buffer it allocates through, denormal.h flushes the denormals the Reverb's and
+  the Delay's feedback paths would otherwise generate, and wdltypes.h is what
+  those two include.
+
+  WDL is Cockos' own platform-independent library. The copy vendored here was
+  taken from the checkout inside iPlug2 at third_party/NeuralAmpModelerPlugin,
+  because that is where a copy already sat on this machine -- but NO iPlug2 code
+  is used, linked or included. iPlug2's own IPlug/Extras headers (LFO.h, SVF.h,
+  DCBlocker.h, Smoothers.h) were considered and REJECTED, because each reaches
+  IPlugPlatform.h or IPlugConstants.h and would drag that framework into the
+  include graph. The four files above include nothing but each other and the C
+  standard library, and are verified to build on Linux with -Wall -Wextra.
+
+-------------------------------------------------------------------------------
+
+Linked system libraries (Linux: the distribution's own shared libraries;
+Windows: built static into the bundle by scripts/build-win-deps.sh):
+
+  cairo              https://cairographics.org/       LGPL 2.1 OR MPL 1.1.
+  pixman             https://cairographics.org/       MIT.
+  FreeType           https://freetype.org/            FTL OR GPLv2 (dual).
+  libpng             http://libpng.org/pub/png/       libpng/zlib licence.
+  zlib               https://zlib.net/                zlib licence.
+  fontconfig         https://freedesktop.org/         MIT (Linux only).
+  libX11             https://x.org/                   MIT (Linux only).
+
+  FreeType is taken under the FreeType Licence (FTL), not the GPLv2 arm of its
+  dual licence; the FTL is a BSD-style licence with an advertising clause, and
+  its terms are met by this notice.
+
+  cairo is LGPL 2.1. On Linux it is the distribution's shared library and is
+  linked dynamically, which the LGPL permits without further conditions. On
+  Windows it is linked statically into each bundle, which LGPL 2.1 section 6
+  permits provided the recipient can relink the work against a modified cairo:
+  scripts/build-win-deps.sh is the complete, scripted recipe for the sysroot the
+  bundles are linked against, and the object files needed to relink are
+  reproducible from it.
+
+-------------------------------------------------------------------------------
+
+Installer:
+
+  NSIS 3.11, https://nsis.sourceforge.io/
+
+  Used to build the Windows installer from installer/rations-pedals.nsi. NSIS is
+  distributed under the zlib/libpng licence, with the exception of some
+  contributed parts under other free licences; the exact terms are in the NSIS
+  distribution's COPYING. NSIS itself is a build tool: none of its source is
+  compiled into the plug-ins.
+
+-------------------------------------------------------------------------------
+
+Bundled fonts (resources/fonts/):
+
+  Michroma-Regular.ttf   SIL Open Font License 1.1.
+  Roboto-Regular.ttf     Apache License 2.0.
+
+  Michroma is the silkscreen: each pedal's name is drawn as text in it at run
+  time. Roboto is the knob legends, the value readouts and the MIDI strip.
+
+-------------------------------------------------------------------------------
+
+Vector icons (resources/img/*.svg):
+
+  Gear.svg, Cross.svg and ArrowLeft.svg are copied verbatim from
+  NeuralAmpModelerPlugin (MIT, Copyright (c) 2022, 2023 Steven Atkinson). None
+  of the three is drawn by these plug-ins or shipped inside their bundles: each
+  bundle carries only the art it draws.
+
+-------------------------------------------------------------------------------
+
+Enclosure art and control graphics (resources/img/*.png) and the scripts that
+produce them (gui/):
+
+  Copyright (c) 2026 rations. MIT Licence, as part of this project.
+
+  The five enclosure faces, the knob, the footswitch, the bat-switch rings and
+  the LEDs are the author's own work, generated by the ImageMagick 7 pipelines
+  in gui/.
+
+  gui/make_knob.sh, and gui/make_switch.sh's ancestor make_footswitch.sh, were
+  originally written by the same author for a sibling project that is licensed
+  GPL-3.0-or-later, and they carried that project's GPL-3 header. That project
+  is GPL-3 solely because it links JUCE. Neither script contains JUCE code or
+  derives from anything GPL-licensed: both are pure ImageMagick 7 command
+  pipelines (masks, radial gradients, and the CopyOpacity / DstIn / screen
+  compose operators), and the only mention of JUCE in either file was a comment
+  explaining why the knob art must be trimmed and centred before rotation — a
+  requirement that applies identically to Cairo. As the sole author and
+  copyright holder, the author has relicensed them MIT for use here.
+
+-------------------------------------------------------------------------------
+
+Reference material (not distributed, not compiled):
+
+  The DSP in src/pedals/ is written against published analysis and against
+  reference implementations that are read but not copied: Julius O. Smith III's
+  *Physical Audio Signal Processing* (CCRMA) for the Chorus, Flanger, Delay and
+  Reverb topologies; David Te-Mao Yeh's 2009 Stanford thesis for the Boost's
+  clipper; and DaisySP (MIT), Freeverb (public domain), signalsmith-dsp (MIT)
+  and chowdsp_wdf (BSD-3-Clause) as structural references. Where a file follows
+  one of these, its header says so and says where the two differ. No source from
+  any of them is present in this repository.

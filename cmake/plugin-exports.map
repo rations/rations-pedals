@@ -1,0 +1,26 @@
+/* The complete export list of every Rations Pedals bundle.
+ *
+ * --exclude-libs,ALL keeps static archives out of the dynamic symbol table and
+ * -fvisibility=hidden keeps our own code out, but neither reaches implicitly
+ * instantiated libstdc++ templates: libstdc++ declares `namespace std` with
+ * _GLIBCXX_VISIBILITY(default), so an instantiation such as
+ * std::vector<double>::_M_fill_assign is emitted WEAK with DEFAULT visibility
+ * whatever -fvisibility says, and lands in the bundle's dynamic symbol table.
+ *
+ * Weak is not unique, so this is not the STB_GNU_UNIQUE bug and glibc will still
+ * unload the library. It is still wrong here: with five sibling plug-ins in one
+ * host process, the first bundle loaded wins the definition for all five, so
+ * five plug-ins that are meant to share nothing at run time would in fact be
+ * calling into one another's code. A version script is the only thing that
+ * closes it, because it filters the symbol table after everything else has had
+ * its say.
+ *
+ * A VST3 module needs exactly these three entry points and nothing else. */
+{
+    global:
+        GetPluginFactory;
+        ModuleEntry;
+        ModuleExit;
+    local:
+        *;
+};

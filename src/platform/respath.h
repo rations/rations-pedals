@@ -43,9 +43,9 @@ const std::string &resourceDir();
 // a 0xFF. Passing an std::error_code does not help, because the throw happens
 // while the path is being built, before any filesystem call sees it.
 //
-// Every path this plug-in acts on is untrusted (RULES.md section 3): a state
-// blob written into a project file, an impulse response picked in the cabinet
-// page's browser, an environment override. Without this, one bad byte in a
+// Every path this plug-in acts on is untrusted: a state blob written into a
+// project file, a resource directory beside the bundle, an environment
+// override. Without this, one bad byte in a
 // saved project would leave the host with an uncaught exception out of a worker
 // thread or out of its own message loop.
 //
@@ -55,27 +55,6 @@ const std::string &resourceDir();
 // express as a path; callers treat that as "no such file", which every load
 // path already degrades gracefully for.
 bool utf8ToPath(const std::string &s, std::filesystem::path &out);
-
-// The last component of a path: "MyAmp" from "/home/me/captures/MyAmp", and
-// "cab.wav" from "C:\Users\me\IRs\cab.wav".
-//
-// This is what the editor's loader rows show. They are one line wide and a
-// user's capture folder can sit arbitrarily deep, so the row shows the folder's
-// own name — plus the capture count for a bank — rather than the path.
-//
-// std::filesystem, not find_last_of('/'), because the separator is not the same
-// on both platforms. Windows paths come back from fs::path::string() with '\',
-// which a search for '/' never finds, so the rows showed the user's entire
-// path. Searching for both characters instead would be wrong in the other
-// direction: a backslash in a POSIX filename is an ordinary character and must
-// not split the name. That distinction is exactly what fs::path knows and a
-// character search cannot.
-//
-// A trailing separator is handled, because a directory chosen in the browser
-// can carry one and fs::path::filename() is empty for those. A path with no
-// shorter form than itself — a root — is returned unchanged, as is one this
-// platform cannot express as a path at all.
-std::string pathBaseName(const std::string &path);
 
 // Read a whole file into memory. `path` is UTF-8.
 //

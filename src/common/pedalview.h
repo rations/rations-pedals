@@ -23,7 +23,6 @@
 #include "gfx/canvas.h"
 #include "gfx/fontstack.h"
 #include "gfx/image.h"
-#include "gfx/svg.h"
 #include "platform/plugview.h"
 #include "platform/respath.h"
 
@@ -81,7 +80,6 @@ protected:
         const std::string res = resourceDir();
         mFonts.load(res);
         mImages.setResourceDir(res);
-        mSvgs.setResourceDir(res);
         // The binding was learned before this view existed, and nothing else would tell the strip
         // what it is.
         if (mController)
@@ -113,7 +111,7 @@ protected:
 
         FaceState s = faceState();
         drawPedalFace(c, mImages, s, mScale);
-        drawStrip(c, mSvgs, s, mScale);
+        drawStrip(c, s, mScale);
         cairo_restore(cr);
     }
 
@@ -432,7 +430,6 @@ private:
 
     FontStack mFonts;
     ImageCache mImages;
-    SvgCache mSvgs;
 
     double mNorm[kParamCount] = {};
     double mBypassNorm = 0.0;

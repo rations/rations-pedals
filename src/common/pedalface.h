@@ -13,7 +13,6 @@
 
 #include "gfx/canvas.h"
 #include "gfx/image.h"
-#include "gfx/svg.h"
 
 namespace Rations
 {
@@ -49,7 +48,7 @@ void drawPedalFace(Canvas &c, ImageCache &images, const FaceState &s, double sca
 
 // The MIDI strip beneath it. Split out because the enclosure is static between parameter changes
 // and the strip is not.
-void drawStrip(Canvas &c, SvgCache &svgs, const FaceState &s, double scale);
+void drawStrip(Canvas &c, const FaceState &s, double scale);
 
 // The geometry of the two strip buttons, in one place, so the painter and the hit test cannot
 // drift apart — which for a Clear button that only exists on a learned row is not a theoretical

@@ -277,7 +277,7 @@ protected:
             // one feedback's worth of level per hop.
             //
             // The input collapses to the AVERAGE rather than to the sum, so a correlated pair —
-            // which is what the cabinet hands over whenever the Flanger is not running — keeps its
+            // which is what a mono source on a stereo bus hands over — keeps its
             // level as the mode is crossed into.
             const double mid = 0.5 * (xl + xr);
             const double injL = xl + cross * (mid - xl);

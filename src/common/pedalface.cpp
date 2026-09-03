@@ -283,9 +283,8 @@ Rect stripClearRect()
                 static_cast<float>(geo::kStripClearW), static_cast<float>(geo::kStripButtonH));
 }
 
-void drawStrip(Canvas &c, SvgCache &svgs, const FaceState &s, double scale)
+void drawStrip(Canvas &c, const FaceState &s, double scale)
 {
-    (void)svgs;
     (void)scale;
     c.setColor(geo::kStripBg);
     c.fillRect(Rect(0, static_cast<float>(geo::kArtH), static_cast<float>(geo::kWindowW),

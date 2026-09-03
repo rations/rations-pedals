@@ -49,14 +49,14 @@
 # THE PREFIX IS SHARED WITH THE PARENT PROJECT. The default root below is the
 # same one the parent plug-in NAMp's identical script installs to, deliberately:
 # the two want byte-identical dependencies, and building them twice would only
-# create a way for them to differ. Override it with $RATIONS_WIN_DEPS_ROOT if
+# create a way for them to differ. Override it with $RPEDALS_WIN_DEPS_ROOT if
 # that is not wanted. The sharing is also why the FreeType patch below tests for
 # a project-NEUTRAL sentinel — see the comment at that step.
 set -euo pipefail
 
 TRIPLE="${TRIPLE:-x86_64-w64-mingw32}"
-ROOT="${RATIONS_WIN_DEPS_ROOT:-$HOME/third_party/win-deps}"
-SYSROOT="${RATIONS_WIN_SYSROOT:-$ROOT/sysroot}"
+ROOT="${RPEDALS_WIN_DEPS_ROOT:-$HOME/third_party/win-deps}"
+SYSROOT="${RPEDALS_WIN_SYSROOT:-$ROOT/sysroot}"
 DL="$ROOT/dl"
 BUILD="$ROOT/build"
 JOBS="$(nproc)"

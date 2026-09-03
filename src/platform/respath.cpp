@@ -172,7 +172,7 @@ std::string resolve()
     // (src/gfx/resourcestore.h), so it is only worth a warning when there is nothing to fall back
     // on either — which is the case that really does draw flat rectangles.
     if (embeddedResourceCount() == 0)
-        fprintf(stderr, "Rations: could not locate the resource directory; "
+        fprintf(stderr, "Rations Pedals: could not locate the resource directory; "
                         "art and fonts will fall back\n");
     return std::string();
 }
@@ -203,23 +203,6 @@ bool utf8ToPath(const std::string &s, std::filesystem::path &out)
 }
 
 //------------------------------------------------------------------------
-std::string pathBaseName(const std::string &path)
-{
-    std::filesystem::path p;
-    if (!utf8ToPath(path, p))
-        return path; // not expressible as a path here; show it as it came
-
-    if (p.has_filename())
-        return p.filename().string();
-
-    // A trailing separator: "/foo/bar/" and "C:\" both have an empty
-    // filename(). Step up once and take the name from there.
-    const std::filesystem::path parent = p.parent_path();
-    if (parent.has_filename())
-        return parent.filename().string();
-
-    return path; // a root: there is no shorter name for it than itself
-}
 
 //------------------------------------------------------------------------
 bool readFileBytes(const std::string &path, std::vector<unsigned char> &out)

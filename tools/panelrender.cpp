@@ -34,7 +34,6 @@
 #include "gfx/canvas.h"
 #include "gfx/fontstack.h"
 #include "gfx/image.h"
-#include "gfx/svg.h"
 #include "platform/respath.h"
 
 #include <cairo/cairo.h>
@@ -300,8 +299,6 @@ int main(int argc, char **argv)
 
     ImageCache images;
     images.setResourceDir(resDir);
-    SvgCache svgs;
-    svgs.setResourceDir(resDir);
 
     const int pw = static_cast<int>(std::lround(geo::kWindowW * scale));
     const int ph = static_cast<int>(std::lround(geo::kWindowH * scale));
@@ -351,7 +348,7 @@ int main(int argc, char **argv)
         st.bindingText = "CC 64";
         st.learned = true; // draws the Clear button, which is the wider strip layout
         drawPedalFace(c, images, st, scale);
-        drawStrip(c, svgs, st, scale);
+        drawStrip(c, st, scale);
 
         auditText(c, f);
 

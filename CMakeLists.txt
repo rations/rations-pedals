@@ -53,7 +53,7 @@ endif()
 # The VST 3 SDK.
 #
 # The in-tree submodule, pinned; /home/human/third_party/vst3sdk is the read-only reference tree
-# RULES.md #1 requires SDK facts to be checked against and is deliberately NOT what builds.
+# every SDK fact is checked against, and is deliberately NOT what builds.
 # ---------------------------------------------------------------------------
 if(NOT TARGET sdk)
     set(VST3_SDK_DIR "${RPEDALS_ROOT}/vst3sdk" CACHE PATH "VST 3 SDK source tree")
@@ -187,7 +187,6 @@ set(RPEDALS_SHARED_IMG_FILES
     img/switch_up_ring.png
     img/switch_down_ring.png
     img/pedal_switch.png
-    img/Cross.svg
 )
 
 set(RPEDALS_FONT_PATHS "")
@@ -312,6 +311,17 @@ foreach(_pedal IN LISTS RPEDALS_PEDALS)
     # the bundle's dynamic symbol table. With five sibling plug-ins in one host this is the other
     # half of the visibility rule above.
     target_link_options(${_target} PRIVATE -Wl,--exclude-libs,ALL)
+    # ... and the version script closes what neither of those reaches: libstdc++ declares
+    # `namespace std` with default visibility, so implicitly instantiated templates are exported
+    # WEAK whatever -fvisibility says, and with five bundles in one host the first one loaded
+    # would win those definitions for all five. See cmake/plugin-exports.map. ELF only; the
+    # Windows link is gated on its own export list by makedist-windows.sh.
+    if(NOT RPEDALS_WINDOWS)
+        target_link_options(${_target} PRIVATE
+            "-Wl,--version-script=${RPEDALS_ROOT}/cmake/plugin-exports.map")
+        set_property(TARGET ${_target} APPEND PROPERTY
+            LINK_DEPENDS "${RPEDALS_ROOT}/cmake/plugin-exports.map")
+    endif()
 endforeach()
 
 # ---------------------------------------------------------------------------

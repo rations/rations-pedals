@@ -141,7 +141,7 @@ int xErrorHandler(::Display *display, XErrorEvent *event)
     char text[128];
     text[0] = '\0';
     XGetErrorText(display, event->error_code, text, sizeof(text));
-    fprintf(stderr, "Rations: X error %u (%s) on request %u.%u, resource 0x%lx — ignored\n",
+    fprintf(stderr, "Rations Pedals: X error %u (%s) on request %u.%u, resource 0x%lx — ignored\n",
             static_cast<unsigned>(event->error_code), text,
             static_cast<unsigned>(event->request_code), static_cast<unsigned>(event->minor_code),
             static_cast<unsigned long>(event->resourceid));
@@ -385,7 +385,7 @@ bool X11PlugView::openWindow(::Window parent)
     // file descriptor is what gets registered with the run loop below.
     mDisplay = XOpenDisplay(nullptr);
     if (!mDisplay) {
-        fprintf(stderr, "Rations: cannot open an X display for the editor\n");
+        fprintf(stderr, "Rations Pedals: cannot open an X display for the editor\n");
         return false;
     }
     // From here on an X error on this connection is ours to survive rather than
@@ -419,7 +419,7 @@ bool X11PlugView::openWindow(::Window parent)
         if (parentAttrs.root)
             colormapRoot = parentAttrs.root;
     } else {
-        fprintf(stderr, "Rations: cannot read the host window's attributes; falling back "
+        fprintf(stderr, "Rations Pedals: cannot read the host window's attributes; falling back "
                         "to the screen's default visual\n");
     }
 
@@ -459,7 +459,7 @@ bool X11PlugView::openWindow(::Window parent)
     XSync(mDisplay, False);
     if (!mWindow || gErrorCount.load() != errorsBefore) {
         fprintf(stderr,
-                "Rations: the host rejected the editor window (parent 0x%lx, depth %d, "
+                "Rations Pedals: the host rejected the editor window (parent 0x%lx, depth %d, "
                 "visual 0x%lx)\n",
                 parent, depth, visual ? static_cast<unsigned long>(visual->visualid) : 0UL);
         mWindow = 0; // never created, so there is nothing to destroy
@@ -493,7 +493,7 @@ bool X11PlugView::openWindow(::Window parent)
                                          static_cast<int>(height));
     if (cairo_surface_status(mTarget) != CAIRO_STATUS_SUCCESS ||
         cairo_surface_status(mBuffer) != CAIRO_STATUS_SUCCESS) {
-        fprintf(stderr, "Rations: cannot create the editor drawing surfaces\n");
+        fprintf(stderr, "Rations Pedals: cannot create the editor drawing surfaces\n");
         closeWindow();
         return false;
     }
@@ -611,7 +611,7 @@ bool X11PlugView::resizeSurfaces(int w, int h)
         // Keep the old buffer: drawing at the previous size is wrong but
         // survivable, whereas a null buffer would stop the editor painting at
         // all for the rest of the session.
-        fprintf(stderr, "Rations: cannot resize the editor buffer to %dx%d\n", w, h);
+        fprintf(stderr, "Rations Pedals: cannot resize the editor buffer to %dx%d\n", w, h);
         cairo_surface_destroy(buffer);
         return false;
     }
@@ -651,14 +651,15 @@ void X11PlugView::attachedToParent()
         if (mRunLoop->registerEventHandler(this, ConnectionNumber(mDisplay)) == kResultTrue)
             mEventHandlerRegistered = true;
         else
-            fprintf(stderr, "Rations: the host refused to register the editor's event handler\n");
+            fprintf(stderr,
+                    "Rations Pedals: the host refused to register the editor's event handler\n");
 
         if (mRunLoop->registerTimer(this, kTimerMs) == kResultTrue)
             mTimerRegistered = true;
         else
-            fprintf(stderr, "Rations: the host refused to register the editor's timer\n");
+            fprintf(stderr, "Rations Pedals: the host refused to register the editor's timer\n");
     } else {
-        fprintf(stderr, "Rations: this host provides no Linux::IRunLoop; "
+        fprintf(stderr, "Rations Pedals: this host provides no Linux::IRunLoop; "
                         "the editor cannot receive events\n");
     }
 

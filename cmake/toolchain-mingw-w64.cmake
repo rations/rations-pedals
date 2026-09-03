@@ -7,7 +7,7 @@
 # The graphics dependencies (cairo, pixman, freetype, libpng, zlib) are NOT
 # packaged for MinGW by Debian — the only mingw library in the archive is
 # libz-mingw-w64 — so they are built from source into a private sysroot by
-# scripts/build-win-deps.sh. Point RATIONS_WIN_SYSROOT at that prefix, or let it
+# scripts/build-win-deps.sh. Point RPEDALS_WIN_SYSROOT at that prefix, or let it
 # default to the location that script installs to.
 #
 # THREAD MODEL. The POSIX-threads MinGW variant is required, not preferred:
@@ -19,24 +19,24 @@
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
 
-set(RATIONS_WIN_TRIPLE "x86_64-w64-mingw32"
+set(RPEDALS_WIN_TRIPLE "x86_64-w64-mingw32"
     CACHE STRING "MinGW-w64 target triple")
 
 # Built by scripts/build-win-deps.sh. Kept outside the repository: it is build
 # output, it is large, and it is shared by every build directory.
-set(RATIONS_WIN_SYSROOT "$ENV{HOME}/third_party/win-deps/sysroot"
+set(RPEDALS_WIN_SYSROOT "$ENV{HOME}/third_party/win-deps/sysroot"
     CACHE PATH "Prefix holding the MinGW builds of cairo/pixman/freetype/libpng/zlib")
 
-set(CMAKE_C_COMPILER   ${RATIONS_WIN_TRIPLE}-gcc)
-set(CMAKE_CXX_COMPILER ${RATIONS_WIN_TRIPLE}-g++)
-set(CMAKE_RC_COMPILER  ${RATIONS_WIN_TRIPLE}-windres)
-set(CMAKE_AR           ${RATIONS_WIN_TRIPLE}-ar)
-set(CMAKE_RANLIB       ${RATIONS_WIN_TRIPLE}-ranlib)
-set(CMAKE_STRIP        ${RATIONS_WIN_TRIPLE}-strip)
+set(CMAKE_C_COMPILER   ${RPEDALS_WIN_TRIPLE}-gcc)
+set(CMAKE_CXX_COMPILER ${RPEDALS_WIN_TRIPLE}-g++)
+set(CMAKE_RC_COMPILER  ${RPEDALS_WIN_TRIPLE}-windres)
+set(CMAKE_AR           ${RPEDALS_WIN_TRIPLE}-ar)
+set(CMAKE_RANLIB       ${RPEDALS_WIN_TRIPLE}-ranlib)
+set(CMAKE_STRIP        ${RPEDALS_WIN_TRIPLE}-strip)
 
 # Look for headers and libraries in the sysroot and the cross toolchain only;
 # find programs on the build host, so cmake/pkg-config/ninja still resolve.
-set(CMAKE_FIND_ROOT_PATH "${RATIONS_WIN_SYSROOT}" "/usr/${RATIONS_WIN_TRIPLE}")
+set(CMAKE_FIND_ROOT_PATH "${RPEDALS_WIN_SYSROOT}" "/usr/${RPEDALS_WIN_TRIPLE}")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
@@ -44,7 +44,7 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # pkg-config must read the sysroot's .pc files and nothing from the host, or a
 # configure would happily hand back /usr/lib/x86_64-linux-gnu flags.
-set(ENV{PKG_CONFIG_LIBDIR} "${RATIONS_WIN_SYSROOT}/lib/pkgconfig")
+set(ENV{PKG_CONFIG_LIBDIR} "${RPEDALS_WIN_SYSROOT}/lib/pkgconfig")
 set(ENV{PKG_CONFIG_PATH} "")
 set(ENV{PKG_CONFIG_SYSROOT_DIR} "")
 
@@ -73,7 +73,7 @@ set(CMAKE_MODULE_LINKER_FLAGS_INIT "-static -Wl,--no-undefined")
 # Run cross-built test/tool executables under Wine. This is what lets the
 # offline render and the SDK's validator/moduleinfotool be driven from the
 # build, and it is why a Windows VM is not needed for the normal loop.
-find_program(RATIONS_WINE_EXECUTABLE wine)
-if(RATIONS_WINE_EXECUTABLE)
-    set(CMAKE_CROSSCOMPILING_EMULATOR "${RATIONS_WINE_EXECUTABLE}")
+find_program(RPEDALS_WINE_EXECUTABLE wine)
+if(RPEDALS_WINE_EXECUTABLE)
+    set(CMAKE_CROSSCOMPILING_EMULATOR "${RPEDALS_WINE_EXECUTABLE}")
 endif()

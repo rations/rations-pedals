@@ -77,13 +77,13 @@ cairo_surface_t *ImageCache::get(const char *name)
             MemoryPng src{res->data, res->size, 0};
             surface = cairo_image_surface_create_from_png_stream(&readMemoryPng, &src);
             if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
-                fprintf(stderr, "Rations: built-in art %s is unreadable (flat fallback)\n",
+                fprintf(stderr, "Rations Pedals: built-in art %s is unreadable (flat fallback)\n",
                         rel.c_str());
                 cairo_surface_destroy(surface);
                 surface = nullptr;
             }
         } else {
-            fprintf(stderr, "Rations: missing art %s (flat fallback)\n", path.c_str());
+            fprintf(stderr, "Rations Pedals: missing art %s (flat fallback)\n", path.c_str());
         }
     }
 

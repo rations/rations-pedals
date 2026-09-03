@@ -22,9 +22,8 @@ constexpr uint32_t kFaceColor = 0x1E1C1D; // faceplate fallback if base.png fail
 constexpr uint32_t kGold = 0xB88B4C;      // piping / hairlines, sampled from the art
 constexpr uint32_t kTextColor = 0xFFFFFF; // labels
 constexpr uint32_t kDimColor = 0x9A9490;  // empty / disabled text
-// Theme accent: green, inherited from NAMp, which shares this panel art (the sibling
-// single-capture plug-in is azure
-// (0x5085E8 / 0x6A9FF0).
+// Theme accent: green, carried over from the amp these pedals came out of, so that a board
+// built from both reads as one family.
 constexpr uint32_t kAccent = 0x3FD05A;
 constexpr uint32_t kAccentBright = 0x7FE89A; // bright tick at the top of a meter fill
 constexpr uint32_t kPeakColor = 0xFF3B30;    // meter peak marker

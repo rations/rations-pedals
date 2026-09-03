@@ -41,7 +41,7 @@ namespace dsp
 // several algebraically equivalent ways to write one; they do not all round the same way in
 // floating point. This is the one the pedals were measured against, so the expression stays
 // exactly as it is — nested, with the 0.5 factored out front — and the reformatting below is
-// the only difference from the original (clang-format, per RULES.md #5).
+// the only difference from the original (clang-format to this project's style).
 template <typename T> inline T cubicInterpolation(T p[4], T x)
 {
     return p[1] + 0.5 * x *

@@ -31,12 +31,60 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
 using namespace Rations;
 using namespace Rations::pedals;
+
+//--- allocation tracking ------------------------------------------------------------------------
+// The real-time contract says prepare() does every allocation and process()/setParams()/
+// setEngaged() do none. That is a property of the machine code, not of the source reading well, so
+// it is checked by counting: global operator new is replaced with one that increments a counter
+// while armed, and the counter must stay at zero across a run that exercises every audio-path
+// entry point on every pedal.
+//
+// The counter is armed only after a warm-up run, because the FIRST block through a pedal is
+// entitled to touch pages the allocator has not faulted in yet, and because stdio itself allocates
+// on first use. Nothing prints while armed.
+namespace alloc
+{
+std::size_t gCount = 0;
+bool gArmed = false;
+} // namespace alloc
+
+void *operator new(std::size_t n)
+{
+    if (alloc::gArmed)
+        ++alloc::gCount;
+    void *p = std::malloc(n ? n : 1);
+    if (!p)
+        throw std::bad_alloc();
+    return p;
+}
+void *operator new[](std::size_t n)
+{
+    return ::operator new(n);
+}
+void operator delete(void *p) noexcept
+{
+    std::free(p);
+}
+void operator delete[](void *p) noexcept
+{
+    std::free(p);
+}
+void operator delete(void *p, std::size_t) noexcept
+{
+    std::free(p);
+}
+void operator delete[](void *p, std::size_t) noexcept
+{
+    std::free(p);
+}
 
 namespace
 {
@@ -570,6 +618,96 @@ void checkReverb()
 }
 
 //--- the engage ramp, which is the base class's and is therefore checked once -------------------
+//--- the real-time contract ----------------------------------------------------------------------
+// Every pedal, every audio-path entry point, zero allocations. See the note at the top of the file.
+template <typename P>
+std::size_t allocationsDuringProcess(const ParamList &list, bool stereo, void (*prime)(P &))
+{
+    // Plain-unit defaults straight out of the pedal's own table, with the footswitch forced on so
+    // the DSP actually runs rather than sitting in the disengaged skip.
+    double plain[kParamStateMax];
+    for (int i = 0; i < list.count; ++i)
+        plain[i] = list.items[i].def;
+    plain[0] = 1.0;
+
+    P p;
+    if (prime)
+        prime(p);
+    p.prepare(kRate, kBlock);
+    p.setEngaged(true);
+
+    std::vector<double> l(static_cast<size_t>(kBlock)), r(static_cast<size_t>(kBlock));
+    for (int i = 0; i < kBlock; ++i) {
+        l[static_cast<size_t>(i)] = 0.25 * std::sin(2.0 * 3.14159265358979 * 220.0 * i / kRate);
+        r[static_cast<size_t>(i)] = -l[static_cast<size_t>(i)];
+    }
+
+    // Warm-up, unarmed: the first blocks may fault in pages and are not what this is measuring.
+    for (int b = 0; b < 8; ++b) {
+        p.setParams(plain);
+        p.process(l.data(), stereo ? r.data() : nullptr, kBlock);
+    }
+
+    alloc::gCount = 0;
+    alloc::gArmed = true;
+    for (int b = 0; b < 256; ++b) {
+        // Move a knob every block — a host automating a parameter is the case where a smoother or
+        // a coefficient update would be tempted to resize something.
+        for (int i = 1; i < list.count; ++i) {
+            const PedalParamSpec &sp = list.items[i];
+            const double t = 0.5 + 0.5 * std::sin(0.05 * b + i);
+            plain[i] = sp.min + t * (sp.max - sp.min);
+        }
+        p.setParams(plain);
+        // Stomp the footswitch on and off across the run, which is what drives the engage ramp and
+        // the reset-once-then-skip path.
+        p.setEngaged((b / 32) % 2 == 0);
+        p.process(l.data(), stereo ? r.data() : nullptr, kBlock);
+    }
+    // reset() is on the audio path too: it is what a host calls on a transport jump.
+    p.reset();
+    alloc::gArmed = false;
+    return alloc::gCount;
+}
+
+void checkNoAllocations()
+{
+    printf("  real-time contract (no allocation on the audio path)\n");
+
+    // NEGATIVE CONTROL, first: a counter that cannot count would report every pedal clean and
+    // prove nothing. This allocates on purpose while armed and requires the counter to notice.
+    {
+        alloc::gCount = 0;
+        alloc::gArmed = true;
+        std::vector<double> *deliberate = new std::vector<double>(1024, 1.0);
+        const std::size_t seen = alloc::gCount;
+        alloc::gArmed = false;
+        delete deliberate;
+        check(seen > 0, "the allocation counter detects a deliberate allocation",
+              seen > 0 ? "" : "(the checks below are meaningless)");
+    }
+
+    struct {
+        const char *name;
+        std::size_t count;
+    } results[] = {
+        {"Boost", allocationsDuringProcess<Boost>(kBoostParams, false, nullptr)},
+        {"Chorus", allocationsDuringProcess<Chorus>(kChorusParams, true, nullptr)},
+        {"Flanger", allocationsDuringProcess<Flanger>(kFlangerParams, true, nullptr)},
+        {"Delay",
+         allocationsDuringProcess<Delay>(kDelayParams, true, [](Delay &d) { d.setTempo(120.0); })},
+        {"Reverb", allocationsDuringProcess<Reverb>(kReverbParams, true, nullptr)},
+    };
+    // fmt() takes doubles; these two fields are a string and a count, so they are formatted here.
+    for (const auto &res : results) {
+        char what[128], detail[64];
+        snprintf(what, sizeof(what), "%s allocates nothing in process/setParams/setEngaged",
+                 res.name);
+        snprintf(detail, sizeof(detail), "(%zu allocation(s))", res.count);
+        check(res.count == 0, what, detail);
+    }
+}
+
 void checkEngageRamp()
 {
     printf("  footswitch\n");
@@ -630,6 +768,7 @@ int main()
     checkDelay();
     checkReverb();
     checkEngageRamp();
+    checkNoAllocations();
     printf("pedalcheck: %d checks, %d failures\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;
 }

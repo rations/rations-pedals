@@ -69,7 +69,7 @@
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-build="${RATIONS_BUILD_DIR:-$root/build}"
+build="${RPEDALS_BUILD_DIR:-$root/build}"
 export DISPLAY="${DISPLAY:-:0}"
 
 size="1133x403"

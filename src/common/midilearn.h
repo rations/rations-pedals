@@ -136,7 +136,7 @@ enum class MidiAction {
 // What a row performs when its binding matches: a parameter, an action, and the value the action
 // uses. Fixed at compile time, so the audio thread never has to publish a target, only a binding.
 struct MidiLearnTarget {
-    const char *label;             // what the settings page calls this row
+    const char *label;             // what the MIDI strip calls this row
     Steinberg::Vst::ParamID param; // what it performs
     MidiAction action;             // ... and how
     double value;                  // what Set stores, normalized. Toggle does not read it.

@@ -130,7 +130,8 @@ cairo_font_face_t *FontStack::loadFace(const std::string &path, const std::strin
     }
 
     // Fallback: a generic toy face, so the editor still shows readable text.
-    fprintf(stderr, "Rations: could not load font %s (using a system fallback)\n", path.c_str());
+    fprintf(stderr, "Rations Pedals: could not load font %s (using a system fallback)\n",
+            path.c_str());
     return cairo_toy_font_face_create("sans-serif", CAIRO_FONT_SLANT_NORMAL,
                                       bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 }
@@ -143,7 +144,7 @@ bool FontStack::load(const std::string &resourceDir)
         mLibrary = std::shared_ptr<void>(
             lib, [](void *p) { FT_Done_FreeType(static_cast<FT_Library>(p)); });
     else
-        fprintf(stderr, "Rations: FreeType failed to initialise (using system fallbacks)\n");
+        fprintf(stderr, "Rations Pedals: FreeType failed to initialise (using system fallbacks)\n");
 
     const std::string dir = resourceDir + "/";
     mTitle =

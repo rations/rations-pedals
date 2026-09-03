@@ -97,7 +97,8 @@ NSVGimage *SvgCache::document(const char *name)
             nsvgDelete(doc);
             doc = nullptr;
         }
-        fprintf(stderr, "Rations: missing or unreadable icon %s (drawing nothing)\n", rel.c_str());
+        fprintf(stderr, "Rations Pedals: missing or unreadable icon %s (drawing nothing)\n",
+                rel.c_str());
     }
     mDocs[key] = doc;
     return doc;
@@ -123,7 +124,7 @@ cairo_surface_t *SvgCache::get(const char *name, int w, int h)
     if (!mRasterizer) {
         mRasterizer = nsvgCreateRasterizer();
         if (!mRasterizer) {
-            fprintf(stderr, "Rations: could not create the SVG rasterizer\n");
+            fprintf(stderr, "Rations Pedals: could not create the SVG rasterizer\n");
             mCache[key] = nullptr;
             return nullptr;
         }

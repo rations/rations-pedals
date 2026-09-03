@@ -1,0 +1,115 @@
+# Rations Pedals
+
+Five guitar stompboxes as **separate VST3 plug-ins**, for **Linux** and **Windows**.
+
+| | Pedal | Controls |
+|---|---|---|
+| `RationsBoost.vst3` | **Boost** — a Tube Screamer-style overdrive | Drive, Tone, Level |
+| `RationsChorus.vst3` | **Chorus** — two modulated taps per channel | Rate, Depth, Mix |
+| `RationsFlanger.vst3` | **Flanger** — swept comb with feedback | Rate, Depth, Manual, Regen |
+| `RationsDelay.vst3` | **Delay** — tempo-syncable, optional ping-pong | Time, Feedback, Tone, Mix, Sync, Ping-Pong |
+| `RationsReverb.vst3` | **Reverb** — Freeverb-lineage room | Decay, Tone, Pre-delay, Mix |
+
+Each pedal is its own plug-in with its own enclosure, drawn at 1:1. Install one, install all
+five; none of them needs any of the others.
+
+They are built directly on the **VST 3 SDK** — no JUCE, no VSTGUI, no iPlug2. Each editor is a
+`Steinberg::IPlugView` embedded in the host's own window and painted by hand with Cairo and
+FreeType, so a bundle is a plug-in and a few PNGs and nothing else.
+
+## What is on the panel
+
+- **Knobs** — drag up and down, hold **Shift** for a fine drag, or use the scroll wheel. The
+  value appears above the knob while you are turning it.
+- **The footswitch** — the pedal's own bypass, the big switch at the bottom. It crossfades rather
+  than clicking, and a pedal switched off is genuinely out of circuit: it resets and stops costing
+  the audio thread anything.
+- **The bat toggle** — the *host's* bypass parameter, so a DAW's own bypass button and any
+  automation lane written against it have somewhere to land. It is a separate control from the
+  footswitch on purpose.
+- **The lamp** — lit when the pedal is in.
+- **The MIDI strip**, under the enclosure — one MIDI-learn row, for switching the pedal on and
+  off with a foot controller. Press **Learn**, then send the message you want (a CC, a note, or a
+  program change); the row shows what it bound to, and **Clear** unbinds it. The binding is saved
+  with the project. There is no settings window.
+
+## Channels
+
+Boost accepts a **mono input** — a Tube Screamer is one circuit and this is one instance of it —
+with a mono or stereo output. The other four accept mono or stereo in, mono or stereo out. In
+every case a mono input feeding a stereo output is heard from **both** speakers.
+
+## Building
+
+Requires CMake ≥ 3.25, a C++17 compiler, and Cairo + FreeType development packages. On Debian or
+Ubuntu:
+
+```sh
+sudo apt install build-essential cmake ninja-build \
+                 libcairo2-dev libfreetype-dev libfontconfig-dev libx11-dev
+```
+
+Then:
+
+```sh
+git clone --recurse-submodules <this repository>
+cd rations-pedals
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+```
+
+The five bundles land in `build/VST3/Release/`. Install them by copying the ones you want to
+`~/.vst3/`:
+
+```sh
+mkdir -p ~/.vst3 && cp -r build/VST3/Release/Rations*.vst3 ~/.vst3/
+```
+
+If you already have the SDK checked out somewhere, point the build at it with
+`-DVST3_SDK_DIR=/path/to/vst3sdk` instead of using the submodule.
+
+### Windows
+
+Cross-compiled from Linux with MinGW-w64. `scripts/build-win-deps.sh` builds the static
+dependency sysroot once, then:
+
+```sh
+cmake -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake
+cmake --build build-win -j"$(nproc)"
+```
+
+The release scripts that stage, strip and verify these builds — `scripts/makedist-linux.sh`,
+`scripts/makedist-windows.sh` and the NSIS installer — are not written yet, and neither are the
+JACK standalone hosts. Building and installing by hand, as above, is the supported route today.
+
+## Verifying a build
+
+```sh
+./scripts/pedal-gate.sh
+```
+
+runs two offline checks that need no host, no audio device and no display:
+
+- **`pedalcheck`** — sweeps every control and asserts each pedal does what its panel says (Mix at
+  zero passes the dry signal, Drive adds harmonics, the footswitch does not click, the delay lands
+  on the time its knob shows, …). It also proves that **nothing allocates on the audio path**, and
+  hashes each pedal's output against a golden value, so any change to the sound has to be
+  deliberate.
+- **`panelrender`** — re-measures the enclosure art, renders every legend in the real font and
+  fails if any of them would be clipped or would overlap another control.
+
+And the SDK's own validator, over each bundle:
+
+```sh
+for p in Boost Chorus Flanger Delay Reverb; do
+    build/bin/Release/validator "build/VST3/Release/Rations$p.vst3"
+done
+```
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). Third-party components, the enclosure art and the bundled fonts are
+covered by [NOTICE](NOTICE).
+
+VST is a trademark of Steinberg Media Technologies GmbH.

@@ -106,7 +106,8 @@ const wchar_t *windowClassName(WNDPROC proc)
             // class outlived it.
             const DWORD err = GetLastError();
             if (err != ERROR_CLASS_ALREADY_EXISTS) {
-                fprintf(stderr, "Rations: cannot register the editor window class (error %lu)\n",
+                fprintf(stderr,
+                        "Rations Pedals: cannot register the editor window class (error %lu)\n",
                         static_cast<unsigned long>(err));
                 return false;
             }
@@ -586,13 +587,13 @@ bool Win32PlugView::createSurfaces(int w, int h)
 
     const HDC windowDC = GetDC(mWindow);
     if (!windowDC) {
-        fprintf(stderr, "Rations: cannot obtain a device context for the editor\n");
+        fprintf(stderr, "Rations Pedals: cannot obtain a device context for the editor\n");
         return false;
     }
     mMemDC = CreateCompatibleDC(windowDC);
     ReleaseDC(mWindow, windowDC);
     if (!mMemDC) {
-        fprintf(stderr, "Rations: cannot create the editor's memory device context\n");
+        fprintf(stderr, "Rations Pedals: cannot create the editor's memory device context\n");
         return false;
     }
 
@@ -611,7 +612,7 @@ bool Win32PlugView::createSurfaces(int w, int h)
     mDibBits = nullptr;
     mDib = CreateDIBSection(mMemDC, &bmi, DIB_RGB_COLORS, &mDibBits, nullptr, 0);
     if (!mDib || !mDibBits) {
-        fprintf(stderr, "Rations: cannot create the editor's %dx%d drawing buffer\n", w, h);
+        fprintf(stderr, "Rations Pedals: cannot create the editor's %dx%d drawing buffer\n", w, h);
         destroySurfaces();
         return false;
     }
@@ -623,8 +624,8 @@ bool Win32PlugView::createSurfaces(int w, int h)
     // failure, so it is checked rather than assumed.
     const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
     if (stride != w * 4) {
-        fprintf(stderr, "Rations: unexpected Cairo stride %d for width %d (expected %d)\n", stride, w,
-                w * 4);
+        fprintf(stderr, "Rations Pedals: unexpected Cairo stride %d for width %d (expected %d)\n",
+                stride, w, w * 4);
         destroySurfaces();
         return false;
     }
@@ -632,7 +633,7 @@ bool Win32PlugView::createSurfaces(int w, int h)
     mSurface = cairo_image_surface_create_for_data(static_cast<unsigned char *>(mDibBits),
                                                    CAIRO_FORMAT_ARGB32, w, h, stride);
     if (cairo_surface_status(mSurface) != CAIRO_STATUS_SUCCESS) {
-        fprintf(stderr, "Rations: cannot create the editor drawing surface\n");
+        fprintf(stderr, "Rations Pedals: cannot create the editor drawing surface\n");
         destroySurfaces();
         return false;
     }
@@ -684,7 +685,7 @@ bool Win32PlugView::resizeSurfaces(int w, int h)
     mDibBits = nullptr;
 
     if (!createSurfaces(w, h)) {
-        fprintf(stderr, "Rations: cannot resize the editor buffer to %dx%d\n", w, h);
+        fprintf(stderr, "Rations Pedals: cannot resize the editor buffer to %dx%d\n", w, h);
         mSurface = oldSurface;
         mMemDC = oldMemDC;
         mDib = oldDib;
@@ -730,7 +731,8 @@ bool Win32PlugView::openWindow(HWND parent)
                               WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0,
                               width, height, parent, nullptr, thisModule(), this);
     if (!mWindow) {
-        fprintf(stderr, "Rations: the host rejected the editor window (parent %p, error %lu)\n",
+        fprintf(stderr,
+                "Rations Pedals: the host rejected the editor window (parent %p, error %lu)\n",
                 static_cast<void *>(parent), static_cast<unsigned long>(GetLastError()));
         return false;
     }
@@ -837,7 +839,7 @@ void Win32PlugView::attachedToParent()
     // out of timers.
     mTimerId = SetTimer(mWindow, kTimerId, kTimerMs, nullptr);
     if (mTimerId == 0)
-        fprintf(stderr, "Rations: cannot start the editor's repaint timer; "
+        fprintf(stderr, "Rations Pedals: cannot start the editor's repaint timer; "
                         "the editor will not animate\n");
 
     onAttached();

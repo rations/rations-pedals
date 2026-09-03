@@ -85,8 +85,25 @@ cmake -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-win -j"$(nproc)"
 ```
 
-`scripts/makedist-windows.sh` and the NSIS installer are not written yet; the Windows build
-above produces the bundles, but staging, stripping and the Wine verification are still to come.
+or build the release ZIP, which does all of that and then verifies it:
+
+```sh
+./scripts/makedist-windows.sh        # -> dist/RationsPedals-<version>-windows-x86_64.zip
+```
+
+The ZIP holds the five bundles loose and an installer that offers them as five components, each
+with its own entry in Apps & features, so removing one leaves the other four alone. An unattended
+install takes the whole set, or the subset you name:
+
+```
+RationsPedals-install.exe /S /DELAY /REVERB
+```
+
+Everything the script gates on is measured on the built binaries, and the last three run the
+cross-built code under Wine: the import list (proving `-static` held), the export list (exactly
+the three VST3 entry points), the SDK validator, the DSP compared against the native build sample
+by sample, and the five faces compared against the native render pixel by pixel. **Wine is the
+smoke test; a Windows machine is the gate.**
 
 ## Playing a pedal without a DAW
 
@@ -114,7 +131,10 @@ runs two offline checks that need no host, no audio device and no display:
   zero passes the dry signal, Drive adds harmonics, the footswitch does not click, the delay lands
   on the time its knob shows, …). It also proves that **nothing allocates on the audio path**, and
   hashes each pedal's output against a golden value, so any change to the sound has to be
-  deliberate.
+  deliberate. Those hashes are a **glibc** measurement — four of the five pedals reach `libm` on
+  the audio path, and MinGW's is not glibc's — so on Windows the same tool is run with
+  `--reference`, against a stream file the native build wrote with `--dump`, and compared sample
+  by sample instead.
 - **`panelrender`** — re-measures the enclosure art, renders every legend in the real font and
   fails if any of them would be clipped or would overlap another control.
 

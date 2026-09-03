@@ -19,7 +19,11 @@
 //   change, and the commit has to say what moved and why. An unexplained hash update is the thing
 //   this file exists to make visible.
 //
-// No VST3 and no host: this links the pedal headers directly.
+//   THE HASHES ARE A GLIBC MEASUREMENT, and they are only a gate on a glibc build. See the note
+//   above checkGolden: the cross-platform check is --dump / --reference, not the hash.
+//
+// No VST3 and no host: this links the pedal headers directly, and it is therefore the one DSP
+// check that runs on Windows — under Wine, with no host and no display.
 
 #include "common/pedalids.h"
 #include "pedals/boost.h"
@@ -69,6 +73,14 @@ void *operator new[](std::size_t n)
 {
     return ::operator new(n);
 }
+// GCC 14 targeting MinGW warns -Wmismatched-new-delete on the std::free() in each of these, at
+// the point where it inlines one of them into a libstdc++ deallocate(). The pairing is right:
+// every pointer that can reach here came from the operator new above, which is this program's
+// only allocator. Native GCC 14 compiles the identical code silently. Suppressed rather than
+// worked around — an indirection that hid the pointer from the optimiser would silence it too,
+// and that is concealing a diagnostic rather than answering it.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 void operator delete(void *p) noexcept
 {
     std::free(p);
@@ -85,6 +97,7 @@ void operator delete[](void *p, std::size_t) noexcept
 {
     std::free(p);
 }
+#pragma GCC diagnostic pop
 
 namespace
 {
@@ -147,52 +160,263 @@ std::uint64_t fnv1a(const void *data, size_t bytes)
     return h;
 }
 
-// Run one pedal over the golden stimulus and hash what comes out. `stereo` says whether the right
-// channel is fed and hashed, and must match how the pedal was hashed in the first place.
+// Run one pedal over the golden stimulus. `stereo` says whether the right channel is fed and
+// kept, and must match how the pedal was hashed in the first place.
+struct GoldenStream {
+    bool stereo = false;
+    std::vector<double> l, r;
+};
+
 template <typename P>
-std::uint64_t goldenHash(const double *params, bool stereo, void (*prime)(P &) = nullptr)
+void goldenRun(const double *params, bool stereo, void (*prime)(P &), GoldenStream &out)
 {
     P p;
     if (prime)
         prime(p);
     p.prepare(kRate, kBlock);
     p.setEngaged(true);
-    std::vector<double> l, r;
-    goldenStimulus(l, r, kBlock * kGoldenBlocks);
+    out.stereo = stereo;
+    goldenStimulus(out.l, out.r, kBlock * kGoldenBlocks);
     for (int b = 0; b < kGoldenBlocks; ++b) {
         p.setParams(params);
-        p.process(l.data() + b * kBlock, stereo ? r.data() + b * kBlock : nullptr, kBlock);
+        p.process(out.l.data() + b * kBlock, stereo ? out.r.data() + b * kBlock : nullptr, kBlock);
     }
-    std::uint64_t h = fnv1a(l.data(), l.size() * sizeof(double));
-    if (stereo) {
-        // Hashed as two separate runs of bytes, in the order the reference dump wrote them.
-        const std::uint64_t hr = fnv1a(r.data(), r.size() * sizeof(double));
-        (void)hr;
-        std::vector<double> both;
-        both.reserve(l.size() + r.size());
-        both.insert(both.end(), l.begin(), l.end());
-        both.insert(both.end(), r.begin(), r.end());
-        h = fnv1a(both.data(), both.size() * sizeof(double));
-    }
-    return h;
+    if (!stereo)
+        out.r.clear(); // never written, and hashing it would hash the stimulus
 }
 
-void checkGolden(const char *name, std::uint64_t got, std::uint64_t want)
+std::uint64_t goldenHash(const GoldenStream &s)
 {
+    if (!s.stereo)
+        return fnv1a(s.l.data(), s.l.size() * sizeof(double));
+    // One run of bytes, left then right, which is the order the hashes were first taken in.
+    std::vector<double> both;
+    both.reserve(s.l.size() + s.r.size());
+    both.insert(both.end(), s.l.begin(), s.l.end());
+    both.insert(both.end(), s.r.begin(), s.r.end());
+    return fnv1a(both.data(), both.size() * sizeof(double));
+}
+
+//--- the reference stream ------------------------------------------------------------------------
+// THE HASHES ABOVE ARE A GLIBC MEASUREMENT, and a hash is all-or-nothing. Four of the five pedals
+// reach libm on the audio path — sin() for the Chorus's and Flanger's LFOs, exp() and pow() for
+// the Delay's tone smoother and the Reverb's decay coefficients — and MinGW's libm is not glibc's.
+// The two disagree in the last bit or two, which is within what either promises and is nowhere
+// near audible, and the hash turns that into a total mismatch. Measured on this machine, the
+// Windows build reproduces Boost bit-for-bit and misses on the other four.
+//
+// Reporting those as failures would teach everyone to ignore the one check that says the sound
+// changed, and moving the DSP off libm to make them agree would change what the pedals sound like
+// on Linux, which is the thing that must not move. So the hash gates the reference platform and
+// something else gates the port: --dump writes the five streams from a reference build, and
+// --reference reads that file back and reports how far this build is from it, sample by sample.
+// scripts/makedist-windows.sh runs both halves, so the Windows bundles are gated on the
+// comparison.
+//
+// THE CAP IS MEASURED, NOT CHOSEN, and every run prints what it measured. Against a native build
+// of this tree, the MinGW build under Wine (GCC 14, cairo/FreeType sysroot aside — this tool
+// links neither) came out at:
+//
+//     Boost      0            byte-identical
+//     Chorus     1.110e-16    of a 0.408 peak
+//     Flanger    2.220e-16    of a 0.624 peak
+//     Delay      1.110e-16    of a 0.420 peak
+//     Reverb     2.220e-16    of a 0.615 peak
+//
+// which is one or two ULPs of a double, after 0.32 s of feedback in the two pedals that have any.
+// The cap below is seven orders of magnitude above that and about 180 dB below the signal, so an
+// ordinary libm revision cannot trip it and nothing structural — a mis-sized buffer, a channel
+// read that was never written, a smoother that was not reset — can hide under it.
+constexpr double kStreamMaxAbs = 1.0e-9;
+
+// glibc is the reference libm: the hashes were recorded against it, and against rations-amp built
+// the same way. Everywhere else the hash is reported rather than enforced.
+#if defined(__GLIBC__)
+constexpr bool kHashGates = true;
+#else
+constexpr bool kHashGates = false;
+#endif
+
+const char kStreamMagic[8] = {'R', 'P', 'D', 'S', 'T', 'R', 'M', '1'};
+
+FILE *gDumpFile = nullptr;
+std::vector<std::pair<std::string, GoldenStream>> gRef;
+bool gRefLoaded = false;
+int gHashNotes = 0;
+
+bool writeAll(FILE *f, const void *p, size_t n)
+{
+    return fwrite(p, 1, n, f) == n;
+}
+
+bool readAll(FILE *f, void *p, size_t n)
+{
+    return fread(p, 1, n, f) == n;
+}
+
+// name, then the two channel runs. Doubles are written as they sit in memory: both ends of this
+// comparison are the same little-endian machine word for word, and a text format would round.
+bool writeStream(FILE *f, const char *name, const GoldenStream &s)
+{
+    const std::uint32_t nameLen = static_cast<std::uint32_t>(strlen(name));
+    const std::uint32_t count = static_cast<std::uint32_t>(s.l.size());
+    const std::uint8_t stereo = s.stereo ? 1 : 0;
+    if (!writeAll(f, &nameLen, sizeof(nameLen)) || !writeAll(f, name, nameLen) ||
+        !writeAll(f, &stereo, sizeof(stereo)) || !writeAll(f, &count, sizeof(count)))
+        return false;
+    if (!writeAll(f, s.l.data(), s.l.size() * sizeof(double)))
+        return false;
+    if (s.stereo && !writeAll(f, s.r.data(), s.r.size() * sizeof(double)))
+        return false;
+    return true;
+}
+
+// Untrusted input, like every other file this project reads: the counts are bounded against what
+// this build would produce before anything is resized to them.
+bool readStreams(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "pedalcheck: cannot open reference stream %s\n", path);
+        return false;
+    }
+    char magic[8];
+    if (!readAll(f, magic, sizeof(magic)) || memcmp(magic, kStreamMagic, sizeof(magic)) != 0) {
+        fprintf(stderr, "pedalcheck: %s is not a pedalcheck reference stream\n", path);
+        fclose(f);
+        return false;
+    }
+    const std::uint32_t expected = static_cast<std::uint32_t>(kBlock * kGoldenBlocks);
+    for (;;) {
+        std::uint32_t nameLen = 0;
+        if (fread(&nameLen, 1, sizeof(nameLen), f) == 0)
+            break; // clean end of file
+        if (nameLen == 0 || nameLen > 64) {
+            fprintf(stderr, "pedalcheck: %s has a malformed record\n", path);
+            fclose(f);
+            return false;
+        }
+        std::string name(nameLen, '\0');
+        std::uint8_t stereo = 0;
+        std::uint32_t count = 0;
+        if (!readAll(f, &name[0], nameLen) || !readAll(f, &stereo, sizeof(stereo)) ||
+            !readAll(f, &count, sizeof(count)) || count != expected || stereo > 1) {
+            fprintf(stderr, "pedalcheck: %s is truncated, or was written by another stimulus\n",
+                    path);
+            fclose(f);
+            return false;
+        }
+        GoldenStream s;
+        s.stereo = stereo != 0;
+        s.l.resize(count);
+        if (!readAll(f, s.l.data(), count * sizeof(double))) {
+            fprintf(stderr, "pedalcheck: %s is truncated\n", path);
+            fclose(f);
+            return false;
+        }
+        if (s.stereo) {
+            s.r.resize(count);
+            if (!readAll(f, s.r.data(), count * sizeof(double))) {
+                fprintf(stderr, "pedalcheck: %s is truncated\n", path);
+                fclose(f);
+                return false;
+            }
+        }
+        gRef.emplace_back(name, std::move(s));
+    }
+    fclose(f);
+    gRefLoaded = true;
+    return true;
+}
+
+const GoldenStream *findRef(const char *name)
+{
+    for (const auto &e : gRef)
+        if (e.first == name)
+            return &e.second;
+    return nullptr;
+}
+
+// The worst single-sample disagreement between this build and the reference one, over both
+// channels. Reported alongside the reference's own peak, because "1e-16 out of 0.5" and "1e-16
+// out of 1e-15" are not the same statement.
+void checkAgainstReference(const char *name, const GoldenStream &s)
+{
+    const GoldenStream *ref = findRef(name);
+    if (!ref) {
+        check(false, "stream against the reference build", "not present in the reference file");
+        return;
+    }
+    if (ref->stereo != s.stereo || ref->l.size() != s.l.size()) {
+        check(false, "stream against the reference build", "the reference has a different shape");
+        return;
+    }
+    double worst = 0.0, peak = 0.0;
+    size_t at = 0;
+    for (size_t i = 0; i < s.l.size(); ++i) {
+        const double d = std::fabs(s.l[i] - ref->l[i]);
+        if (d > worst) {
+            worst = d;
+            at = i;
+        }
+        peak = std::max(peak, std::fabs(ref->l[i]));
+    }
+    if (s.stereo) {
+        for (size_t i = 0; i < s.r.size(); ++i) {
+            const double d = std::fabs(s.r[i] - ref->r[i]);
+            if (d > worst) {
+                worst = d;
+                at = i;
+            }
+            peak = std::max(peak, std::fabs(ref->r[i]));
+        }
+    }
+    char detail[192];
+    snprintf(detail, sizeof(detail),
+             "(worst |diff| %.3e at sample %zu, reference peak %.3f, cap %.1e)", worst, at, peak,
+             kStreamMaxAbs);
+    check(worst <= kStreamMaxAbs, "stream against the reference build", detail);
+}
+
+// Run the pedal once, then make every claim there is to make about that one run: the hash where
+// the hash means something, and the distance from the reference build where a file was given.
+template <typename P>
+void checkGolden(const char *name, const double *params, bool stereo, std::uint64_t want,
+                 void (*prime)(P &) = nullptr)
+{
+    GoldenStream s;
+    goldenRun<P>(params, stereo, prime, s);
+    const std::uint64_t got = goldenHash(s);
+
     char detail[96];
     snprintf(detail, sizeof(detail), "0x%016llX", (unsigned long long)got);
     if (got == want) {
         check(true, "golden stream", detail);
-        return;
+    } else if (kHashGates) {
+        char both[160];
+        snprintf(both, sizeof(both), "got 0x%016llX, recorded 0x%016llX", (unsigned long long)got,
+                 (unsigned long long)want);
+        check(false, "golden stream", both);
+        printf("          %s's DSP has changed. If that was deliberate, update the hash in this "
+               "file\n"
+               "          in the same commit and say what moved; if it was not, something in\n"
+               "          dsp/sample.h or in the pedal itself has been altered.\n",
+               name);
+    } else {
+        ++gHashNotes;
+        printf("    note  golden stream 0x%016llX, recorded 0x%016llX on glibc - this build's "
+               "libm\n"
+               "          rounds differently, which the hash cannot tolerate and the reference\n"
+               "          comparison can.\n",
+               (unsigned long long)got, (unsigned long long)want);
     }
-    char both[160];
-    snprintf(both, sizeof(both), "got 0x%016llX, recorded 0x%016llX", (unsigned long long)got,
-             (unsigned long long)want);
-    check(false, "golden stream", both);
-    printf("          %s's DSP has changed. If that was deliberate, update the hash in this file\n"
-           "          in the same commit and say what moved; if it was not, something in\n"
-           "          dsp/sample.h or in the pedal itself has been altered.\n",
-           name);
+
+    if (gDumpFile && !writeStream(gDumpFile, name, s)) {
+        fprintf(stderr, "pedalcheck: could not write %s to the dump file\n", name);
+        ++gFailures;
+    }
+    if (gRefLoaded)
+        checkAgainstReference(name, s);
 }
 
 //--- measurement helpers -----------------------------------------------------------------------
@@ -320,7 +544,7 @@ void checkBoost()
           fmt("(%.1f samples)", Boost::kLatencySamples).c_str());
 
     const double golden[] = {1.0, 7.5, 3.0, 6.0};
-    checkGolden("Boost", goldenHash<Boost>(golden, false), 0xD8AA5E0C672FB329ull);
+    checkGolden<Boost>("Boost", golden, false, 0xD8AA5E0C672FB329ull);
 }
 
 //--- Chorus -------------------------------------------------------------------------------------
@@ -375,7 +599,7 @@ void checkChorus()
     }
 
     const double golden[] = {1.0, 2.3, 65.0, 40.0};
-    checkGolden("Chorus", goldenHash<Chorus>(golden, false), 0x91E022DE0A468313ull);
+    checkGolden<Chorus>("Chorus", golden, false, 0x91E022DE0A468313ull);
 }
 
 //--- Flanger ------------------------------------------------------------------------------------
@@ -441,7 +665,7 @@ void checkFlanger()
     }
 
     const double golden[] = {1.0, 0.9, 55.0, 25.0, -70.0};
-    checkGolden("Flanger", goldenHash<Flanger>(golden, true), 0xDE9B5536AB18752Cull);
+    checkGolden<Flanger>("Flanger", golden, true, 0xDE9B5536AB18752Cull);
 }
 
 //--- Delay --------------------------------------------------------------------------------------
@@ -541,8 +765,8 @@ void checkDelay()
     }
 
     const double golden[] = {1.0, 180.0, 60.0, 6.5, 45.0, 0.0, 0.0};
-    checkGolden("Delay", goldenHash<Delay>(golden, true, [](Delay &d) { d.setTempo(0.0); }),
-                0xF3268B7483EB96EFull);
+    checkGolden<Delay>("Delay", golden, true, 0xF3268B7483EB96EFull,
+                       [](Delay &d) { d.setTempo(0.0); });
 }
 
 //--- Reverb -------------------------------------------------------------------------------------
@@ -614,7 +838,7 @@ void checkReverb()
     }
 
     const double golden[] = {1.0, 6.5, 7.0, 45.0, 60.0};
-    checkGolden("Reverb", goldenHash<Reverb>(golden, true), 0x0AD37B196EE6ED56ull);
+    checkGolden<Reverb>("Reverb", golden, true, 0x0AD37B196EE6ED56ull);
 }
 
 //--- the engage ramp, which is the base class's and is therefore checked once -------------------
@@ -759,8 +983,42 @@ void checkEngageRamp()
 
 } // namespace
 
-int main()
+void usage()
 {
+    fprintf(stderr, "usage: pedalcheck [--dump FILE] [--reference FILE]\n"
+                    "  --dump       write this build's five golden streams to FILE\n"
+                    "  --reference  compare this build's streams against a FILE written by\n"
+                    "               --dump on the reference build\n");
+}
+
+int main(int argc, char **argv)
+{
+    const char *dumpPath = nullptr;
+    const char *refPath = nullptr;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--dump") == 0 && i + 1 < argc)
+            dumpPath = argv[++i];
+        else if (strcmp(argv[i], "--reference") == 0 && i + 1 < argc)
+            refPath = argv[++i];
+        else {
+            usage();
+            return 2;
+        }
+    }
+    if (refPath && !readStreams(refPath))
+        return 2;
+    if (dumpPath) {
+        gDumpFile = fopen(dumpPath, "wb");
+        if (!gDumpFile) {
+            fprintf(stderr, "pedalcheck: cannot write %s\n", dumpPath);
+            return 2;
+        }
+        if (!writeAll(gDumpFile, kStreamMagic, sizeof(kStreamMagic))) {
+            fprintf(stderr, "pedalcheck: cannot write %s\n", dumpPath);
+            return 2;
+        }
+    }
+
     printf("pedalcheck: %d Hz, %d-sample blocks\n", int(kRate), kBlock);
     checkBoost();
     checkChorus();
@@ -769,6 +1027,27 @@ int main()
     checkReverb();
     checkEngageRamp();
     checkNoAllocations();
+
+    if (gDumpFile) {
+        if (fclose(gDumpFile) != 0) {
+            fprintf(stderr, "pedalcheck: the dump file did not close cleanly\n");
+            ++gFailures;
+        } else {
+            printf("pedalcheck: wrote the golden streams to %s\n", dumpPath);
+        }
+        gDumpFile = nullptr;
+    }
+
     printf("pedalcheck: %d checks, %d failures\n", gChecks, gFailures);
+
+    // A build whose libm is not the one the hashes were taken against, run with nothing to
+    // compare itself to, has proved its behaviour and NOT proved its arithmetic. Say so: the
+    // alternative is a green line that means less than it looks like it means.
+    if (gHashNotes > 0 && !gRefLoaded) {
+        printf("pedalcheck: WARNING: %d golden hash(es) differ because this build's libm is not\n"
+               "  glibc's, and no --reference file was given, so nothing has checked this build's\n"
+               "  output against the reference build's. Run the reference build with --dump.\n",
+               gHashNotes);
+    }
     return gFailures == 0 ? 0 : 1;
 }

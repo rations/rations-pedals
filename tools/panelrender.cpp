@@ -159,7 +159,7 @@ FaceBounds measureArt(const std::string &path, double *meanR, double *meanG, dou
     // Mean face colour, over a generous rectangle well inside the border.
     double sr = 0, sg = 0, sb = 0;
     long n = 0;
-    for (int y = geo::kGridRowCY[0] - 40; y < geo::kGridRowCY[0] + 200; ++y) {
+    for (int y = geo::kKnob4Row1CY - 40; y < geo::kKnob4Row1CY + 200; ++y) {
         for (int x = geo::kFaceLeft + 30; x < geo::kFaceRight - 30; ++x) {
             double r, g, bb, a;
             at(x, y, r, g, bb, a);
@@ -186,8 +186,9 @@ FaceBounds measureArt(const std::string &path, double *meanR, double *meanG, dou
 void auditText(Canvas &c, const Face &f)
 {
     const int knobs = knobCount(f.params);
-    const float slot = static_cast<float>(geo::kGridSlotW);
 
+    // Each legend is centred on its own knob, so its allowance is that knob's distance to the
+    // nearer edge of the face rather than one shared slot width.
     c.setFont(Font::Title);
     c.setFontSize(static_cast<float>(geo::kKnobLabelSize));
     for (int k = 0; k < knobs; ++k) {
@@ -196,11 +197,24 @@ void auditText(Canvas &c, const Face &f)
             continue;
         const char *legend = f.params[idx].legend;
         const float w = c.stringWidth(legend);
+        const float slot = static_cast<float>(geo::knobLabelAllowance(knobs, k));
         printf("    knob %-10s %6.1f / %6.1f units%s\n", legend, w, slot,
                w > slot ? "   <- CLIPPED" : "");
         if (w > slot)
             fail("%s: the legend '%s' is %.1f units wide in a %.1f-unit slot", f.key, legend, w,
                  slot);
+
+        // A three-knob face letters its upper pair BESIDE the dial centred below them, so the
+        // legend must also stop short of that dial. This is the clearance the amp's layout rests
+        // on and the one a wider legend would break first.
+        if (knobs == 3 && k < 2) {
+            const geo::Point pt = geo::knobPos(knobs, k);
+            const float reach =
+                std::fabs(static_cast<float>(pt.x) - static_cast<float>(geo::kFaceCX)) - w * 0.5f;
+            if (reach < static_cast<float>(geo::kKnobR))
+                fail("%s: the legend '%s' reaches the dial centred below it (%.1f < %d)", f.key,
+                     legend, reach, geo::kKnobR);
+        }
     }
 
     // The name, which is the widest thing on the face and the one most likely to reach the border.
@@ -213,24 +227,26 @@ void auditText(Canvas &c, const Face &f)
         fail("%s: the name '%s' is %.1f units wide on a %d-unit face", f.key, f.name, nameW,
              geo::kFaceW);
 
-    // Mini legends. They sit in the same grid slot a dial does and carry the same legend size,
-    // so they are measured against the same width.
+    // Mini plates carry their own text INSIDE them, at the plate's own size — a toggle its name,
+    // a list its current value. Measured against the plate less the margin the painter clips to.
     const int minis = miniCount(f.params);
+    const float miniSlot = static_cast<float>(geo::kMiniW - 6);
     c.setFont(Font::Title);
-    c.setFontSize(static_cast<float>(geo::kKnobLabelSize));
+    c.setFontSize(static_cast<float>(geo::kMiniTextSize));
     for (int m = 0; m < minis; ++m) {
         const int idx = miniParam(f.params, m);
         if (idx < 0)
             continue;
         const float w = c.stringWidth(f.params[idx].legend);
-        printf("    mini %-10s %6.1f / %6.1f units%s\n", f.params[idx].legend, w, slot,
-               w > slot ? "   <- CLIPPED" : "");
-        if (w > slot)
-            fail("%s: the mini legend '%s' does not fit its slot", f.key, f.params[idx].legend);
+        printf("    mini %-10s %6.1f / %6.1f units%s\n", f.params[idx].legend, w, miniSlot,
+               w > miniSlot ? "   <- CLIPPED" : "");
+        if (w > miniSlot)
+            fail("%s: the mini legend '%s' does not fit its plate", f.key, f.params[idx].legend);
     }
 
     // The bypass legend is the widest fixed string on the face and the one pedalgeometry.h has to
-    // guess at, because its clearance from the lamp is a compile-time assertion on a constant.
+    // guess at, because its clearance from the footswitch is a compile-time assertion on a
+    // constant.
     c.setFont(Font::Title);
     c.setFontSize(static_cast<float>(geo::kToggleLabelSize));
     const float bypassW = c.stringWidth("BYPASS");
@@ -238,12 +254,12 @@ void auditText(Canvas &c, const Face &f)
            static_cast<float>(geo::kToggleLabelW));
     if (bypassW > geo::kToggleLabelW)
         fail("%s: 'BYPASS' renders %.1f units wide; kToggleLabelW says %d, and the clearance from "
-             "the lamp is asserted against that",
+             "the footswitch is asserted against that",
              f.key, bypassW, geo::kToggleLabelW);
 
     // Every value a List control can take has to fit its plate too — a division name that
     // overflowed would be clipped only at one setting, which is the kind of fault that ships.
-    c.setFont(Font::Body);
+    c.setFont(Font::Title);
     c.setFontSize(static_cast<float>(geo::kMiniTextSize));
     for (int m = 0; m < minis; ++m) {
         const int idx = miniParam(f.params, m);
@@ -251,9 +267,9 @@ void auditText(Canvas &c, const Face &f)
             continue;
         for (int v = 0; v < kDelaySyncCount; ++v) {
             const float w = c.stringWidth(kDelaySyncNames[v]);
-            if (w > geo::kMiniW - 10.0f)
-                fail("%s: the list value '%s' does not fit its plate (%.1f > %d)", f.key,
-                     kDelaySyncNames[v], w, geo::kMiniW - 10);
+            if (w > miniSlot)
+                fail("%s: the list value '%s' does not fit its plate (%.1f > %.1f)", f.key,
+                     kDelaySyncNames[v], w, miniSlot);
         }
     }
 }

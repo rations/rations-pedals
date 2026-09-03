@@ -353,3 +353,75 @@ target_compile_features(pedalcheck PUBLIC cxx_std_17)
 # and the plug-ins are compiled with it. A check built without it would be checking different
 # arithmetic from the one that ships.
 target_compile_options(pedalcheck PRIVATE -ffast-math -Wall -Wextra)
+
+# ---------------------------------------------------------------------------
+# The five JACK standalones — each pedal playable without a DAW.
+#
+# ONE IMPLEMENTATION, FIVE BINARIES. standalone/main.cpp is compiled once per pedal with three
+# defines naming the executable, the window title and the bundle to load; nothing in the source
+# branches on which pedal it is. Five copies of a host that differed only in a window title would
+# drift apart exactly the way five copies of the processor would.
+#
+# Each is a HOST: it loads the bundle as a module rather than linking the plug-in in, so the
+# editor's dladdr-based resource lookup (src/platform/respath.cpp) resolves Contents/Resources
+# exactly as it does inside a DAW, and there is no second compilation of the plug-in to keep in
+# step with the first.
+#
+# Linux only, and only when JACK's development headers are present: a standalone is a convenience,
+# not the product, and its absence must never stop the plug-ins from building.
+# ---------------------------------------------------------------------------
+if(NOT RPEDALS_WINDOWS)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RPEDALS_JACK QUIET jack)
+    endif()
+
+    if(RPEDALS_JACK_FOUND)
+        set(RPEDALS_MODULE_LOADER
+            ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_linux.cpp)
+
+        foreach(_pedal IN LISTS RPEDALS_PEDALS)
+            set(_plugin ${RPEDALS_TARGET_${_pedal}})
+            set(_app rations-${_pedal}-standalone)
+
+            add_executable(${_app}
+                ${RPEDALS_ROOT}/standalone/main.cpp
+                ${RPEDALS_ROOT}/standalone/app.h
+                ${RPEDALS_ROOT}/standalone/runloop.h
+                ${RPEDALS_ROOT}/standalone/runloop.cpp
+                ${RPEDALS_ROOT}/standalone/jackclient.h
+                ${RPEDALS_ROOT}/standalone/jackclient.cpp
+                ${RPEDALS_ROOT}/standalone/midiroute.h
+                ${RPEDALS_ROOT}/standalone/midiroute.cpp
+                ${RPEDALS_MODULE_LOADER}
+                ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
+                # The event list carries Note On to the plug-in — the one of the three footswitch
+                # messages that is still MIDI when it arrives. MemoryStream is what the settings
+                # file is read and written through. Neither is in sdk_hosting.
+                ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/eventlist.cpp
+                ${VST3_SDK_DIR}/public.sdk/source/common/memorystream.cpp
+                ${VST3_SDK_DIR}/public.sdk/samples/vst-hosting/editorhost/source/usediids.cpp
+            )
+            # Who this binary is. The bundle name is the plug-in target's, so a rename cannot leave
+            # a standalone looking for a bundle that is no longer built under that name.
+            target_compile_definitions(${_app} PRIVATE
+                RPEDALS_APP_EXE="${_app}"
+                RPEDALS_APP_TITLE="${RPEDALS_DISPLAY_${_pedal}}"
+                RPEDALS_APP_BUNDLE="${_plugin}.vst3"
+            )
+            target_include_directories(${_app} PRIVATE
+                ${RPEDALS_ROOT}/standalone ${RPEDALS_JACK_INCLUDE_DIRS})
+            target_link_libraries(${_app} PRIVATE
+                sdk_hosting ${RPEDALS_JACK_LIBRARIES} ${RPEDALS_PLATFORM_GUI_LIBS})
+            target_link_directories(${_app} PRIVATE ${RPEDALS_JACK_LIBRARY_DIRS})
+            target_compile_features(${_app} PRIVATE cxx_std_17)
+            target_compile_options(${_app} PRIVATE -Wall -Wextra)
+            # The bundle it loads has to exist before it can be run, and it is found beside the
+            # binary or in the build tree.
+            add_dependencies(${_app} ${_plugin})
+        endforeach()
+    else()
+        message(STATUS "jack not found — the five standalones will not be built "
+                       "(the plug-ins are unaffected)")
+    endif()
+endif()

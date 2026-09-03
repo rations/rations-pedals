@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rations Boost
+GenericName=Guitar Overdrive
+Comment=Tube Screamer-style overdrive and boost (JACK)
+Exec=rations-boost-standalone
+Icon=rations-boost
+Terminal=false
+Categories=AudioVideo;Audio;X-Digital_Processing;
+Keywords=guitar;pedal;stompbox;effect;boost;JACK;VST3;
+StartupNotify=false
+StartupWMClass=Rations Boost

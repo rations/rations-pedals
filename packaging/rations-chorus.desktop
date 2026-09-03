@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rations Chorus
+GenericName=Guitar Chorus
+Comment=Two modulated delay taps per channel (JACK)
+Exec=rations-chorus-standalone
+Icon=rations-chorus
+Terminal=false
+Categories=AudioVideo;Audio;X-Digital_Processing;
+Keywords=guitar;pedal;stompbox;effect;chorus;JACK;VST3;
+StartupNotify=false
+StartupWMClass=Rations Chorus

@@ -195,66 +195,66 @@ void drawPedalFace(Canvas &c, ImageCache &images, const FaceState &s, double sca
     if (!s.norm)
         return;
 
-    // The grid, in table order: every knob, then every mini control. A control's SLOT is decided
-    // by its position in that sequence and nothing else, which is what makes adding one a
-    // one-line change to the pedal's table.
+    // The knobs, in table order, at the positions pedalgeometry.h ports from the pedalboard: two
+    // across the top and a third centred below on a three-knob face, two by two on a four.
     const int knobs = knobCount(s.params);
-    const int minis = miniCount(s.params);
-    const int items = knobs + minis;
-    const float knobR = static_cast<float>(geo::gridKnobR(items));
+    const float knobR = static_cast<float>(geo::kKnobR);
 
-    int item = 0;
-    for (int row = 0; row < geo::gridRows(items); ++row) {
-        const int n = geo::gridRowItems(items, row);
-        const float cy = static_cast<float>(geo::gridCY(items, row));
-        for (int col = 0; col < n; ++col, ++item) {
-            const int idx =
-                item < knobs ? knobParam(s.params, item) : miniParam(s.params, item - knobs);
-            if (idx < 0)
-                continue;
-            const PedalParamSpec &spec = s.params[idx];
-            const float cx = static_cast<float>(geo::gridCX(items, row, col));
+    for (int k = 0; k < knobs; ++k) {
+        const int idx = knobParam(s.params, k);
+        if (idx < 0)
+            continue;
+        const PedalParamSpec &spec = s.params[idx];
+        const geo::Point pt = geo::knobPos(knobs, k);
+        const float cx = static_cast<float>(pt.x);
+        const float cy = static_cast<float>(pt.y);
+        drawKnobAt(c, images, cx, cy, knobR, s.norm[idx], scale);
 
-            if (item < knobs) {
-                drawKnobAt(c, images, cx, cy, knobR, s.norm[idx], scale);
-            } else {
-                // LIVE means "this control is doing something": a sync division other than Free,
-                // or ping-pong switched on. An idle control is outlined, so a face does not carry
-                // bright plates that mean nothing.
-                const std::string val = formatValue(spec, s.norm[idx]);
-                const bool live = spec.kind == PedalParamKind::Toggle
-                                      ? s.norm[idx] > 0.5
-                                      : pedalPlain(spec, s.norm[idx]) > 0.5;
-                const Rect plate(cx - geo::kMiniW * 0.5f, cy - geo::kMiniH * 0.5f,
-                                 static_cast<float>(geo::kMiniW), static_cast<float>(geo::kMiniH));
-                drawPlate(c, plate, val.c_str(), static_cast<float>(geo::kMiniTextSize), live);
-            }
-
-            // The legend, always, and at the same height whichever kind of control it names. It
-            // never dims: on these enclosures a dimmed legend is an invisible one, and the lamp
-            // is what carries state.
-            c.setFont(Font::Title);
-            c.setFontSize(static_cast<float>(geo::kKnobLabelSize));
-            const std::string fit = c.clipToWidth(spec.legend, static_cast<float>(geo::kGridSlotW));
-            // One baseline for the whole row, whichever kind of control sits in each slot: a
-            // legend under a plate and a legend under a dial must line up or the row looks bent.
-            drawInk(c, fit.c_str(), cx - c.stringWidth(fit.c_str()) * 0.5f,
-                    cy + knobR + static_cast<float>(geo::kKnobLabelDY));
-
-            // The readout, only while this dial is being dragged, and ABOVE the dial so it never
-            // covers the legend that says which dial it is.
-            if (item < knobs && item == s.draggingKnob) {
-                const std::string val = formatValue(spec, s.norm[idx]);
-                c.setFont(Font::Body);
-                c.setFontSize(static_cast<float>(geo::kKnobValueSize));
-                const float w = c.stringWidth(val.c_str()) + 14.0f;
-                const Rect plate(cx - w * 0.5f,
-                                 cy - geo::kKnobR -
-                                     static_cast<float>(geo::kKnobValueDY + geo::kKnobValueSize),
-                                 w, static_cast<float>(geo::kKnobValueSize + 8));
-                drawPlate(c, plate, val.c_str(), static_cast<float>(geo::kKnobValueSize), true);
-            }
+        // ONE TEXT ROW PER KNOB, and the value takes it while the knob is held. There is one row
+        // of space under a dial and a second would land on the next row of knobs or on the lamp;
+        // drawing the readout ABOVE the dial instead was tried and put it off the top of the face
+        // on a four-knob pedal, whose upper row starts 99 units down.
+        const bool showValue = (k == s.draggingKnob);
+        const std::string text = showValue ? formatValue(spec, s.norm[idx])
+                                           : std::string(spec.legend ? spec.legend : "");
+        c.setFont(showValue ? Font::Body : Font::Title);
+        c.setFontSize(static_cast<float>(geo::kKnobLabelSize));
+        const std::string fit =
+            c.clipToWidth(text.c_str(), static_cast<float>(geo::knobLabelAllowance(knobs, k)));
+        const float w = c.stringWidth(fit.c_str());
+        const float baseline = cy + knobR + static_cast<float>(geo::kKnobLabelDY);
+        if (showValue) {
+            // The readout is the one thing on the face that has to be seen at a glance while the
+            // pointer is moving, so it inverts rather than changing colour.
+            const Rect plate(cx - w * 0.5f - 4.0f,
+                             baseline - static_cast<float>(geo::kKnobLabelSize), w + 8.0f,
+                             static_cast<float>(geo::kKnobLabelSize + 4));
+            drawPlate(c, plate, fit.c_str(), static_cast<float>(geo::kKnobLabelSize), true);
+        } else {
+            drawInk(c, fit.c_str(), cx - w * 0.5f, baseline);
         }
+    }
+
+    // The mini controls: two fixed slots either side of the lamp. A list draws its VALUE and a
+    // toggle its own name, and both fill when they are doing something — a sync division other
+    // than Free, or a ping-pong that is on. No legend under them: the amp letters none, and the
+    // band between the plate and the footswitch is 24 units.
+    for (int m = 0, minis = miniCount(s.params); m < minis && m < geo::kMiniCount; ++m) {
+        const int idx = miniParam(s.params, m);
+        if (idx < 0)
+            continue;
+        const PedalParamSpec &spec = s.params[idx];
+        const bool live = spec.kind == PedalParamKind::Toggle ? s.norm[idx] > 0.5
+                                                              : pedalPlain(spec, s.norm[idx]) > 0.5;
+        std::string text = spec.kind == PedalParamKind::Toggle
+                               ? std::string(spec.legend ? spec.legend : "")
+                               : formatValue(spec, s.norm[idx]);
+        if (text.empty())
+            text = spec.legend ? spec.legend : ""; // name it rather than draw a gap
+        const Rect plate(static_cast<float>(geo::kMiniCX[m] - geo::kMiniW / 2),
+                         static_cast<float>(geo::kMiniCY - geo::kMiniH / 2),
+                         static_cast<float>(geo::kMiniW), static_cast<float>(geo::kMiniH));
+        drawPlate(c, plate, text.c_str(), static_cast<float>(geo::kMiniTextSize), live);
     }
 
     drawBatToggle(c, images, s.bypassed, scale);

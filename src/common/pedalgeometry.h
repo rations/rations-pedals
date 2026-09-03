@@ -97,122 +97,125 @@ constexpr uint32_t kPedalInkPlate = 0x101214;
 
 // --- the control grid ---
 //
-// Knobs and mini controls share ONE grid, at most three across and at most two down, each row
-// centred on the face. That is what makes the Delay's Sync and Ping-Pong ordinary members of the
-// layout instead of two special cases wedged in beside the lamp, and it is what keeps all five
-// faces the same shape below the grid.
+// PORTED FROM THE PEDALBOARD, NOT RE-DERIVED. rations-amp draws these same five faces at
+// kPedalW = 190 units across (src/geometry.h, kPedalKnobPos and the constants around it); this is
+// that layout at the art's own 468, which is 468 / 190 = 2.4632 times larger. Every number below
+// is the amp's own multiplied by that and rounded, and each one records what it came from — so a
+// pedal opened on its own is the pedal the user already knows from the board, only bigger.
 //
-//   3 items  ->  [ 3 ]          Boost, Chorus
-//   4 items  ->  [ 2 ][ 2 ]     Flanger, Reverb
-//   6 items  ->  [ 3 ][ 3 ]     Delay — four knobs, then Sync and Ping-Pong
+//   1-3 knobs  two across the top, a third centred below them. A triangle, which is the Tube
+//              Screamer's own layout and the layout of most three-knob pedals.
+//   4   knobs  two by two.
+//   minis      two fixed slots either side of the lamp — see kMiniCX.
 //
-// A row of two uses the same PITCH as a row of three rather than spreading to fill the face: the
-// legend slot is then one width everywhere, which is the only reason kKnobLabelSize can be a
-// single number.
-constexpr int kGridCols = 3;
-constexpr int kGridRows = 2;
-// A one-row face has the whole grid band to itself, so its dials are drawn larger — 104 units
-// across in a 118-unit slot, against 84 on a two-row face. Not for its own sake: at 42 a lone row
-// of three reads as small controls stranded in a large empty area, and the empty area is not the
-// problem (a real three-knob pedal has exactly that space between its dials and its footswitch)
-// — the smallness is.
-constexpr int kKnobR = 42;
-constexpr int kKnobRSingle = 52;
-constexpr int kGridPitch = 118;
-constexpr int kGridRowCY[kGridRows] = {135, 275};
+// A THREE-ACROSS ROW WAS BUILT HERE AND REMOVED. It looks tidier on paper and it costs the face
+// its identity: three columns narrow the legend slot until "Repeats" has to be lettered a third
+// smaller than the amp letters it, and every clearance below the knobs then has to move to suit a
+// grid nothing else in the family uses. The amp's layout has none of those problems because the
+// legends sit BESIDE the lower dial on a three-knob face rather than above it.
+constexpr int kKnobR = 49;        // amp kPedalKnobR 20
+constexpr int kKnob3DX = 111;     // amp kPedalKnobDX 45
+constexpr int kKnob3Row1CY = 108; // amp kPedalKnobRow1Y 44
+constexpr int kKnob3MidCY = 190;  // amp kPedalKnobMidY 77
+constexpr int kKnob4DX = 91;      // amp kPedalKnob4DX 37
+constexpr int kKnob4Row1CY = 99;  // amp kPedalKnob4Row1Y 40
+constexpr int kKnob4Row2CY = 246; // amp kPedalKnob4Row2Y 100
 
-constexpr int kKnobLabelSize = 20; // Michroma, the legend under a control
-constexpr int kKnobLabelDY = 28;   // baseline below the control's lower edge
-constexpr int kKnobValueSize = 24; // Roboto, the readout shown while a dial is dragged
-constexpr int kKnobValueDY = 28;   // above the dial's UPPER edge, so it never covers the legend
+constexpr int kKnobLabelSize = 27;  // amp kPedalLabelSize 11 — Michroma, under a control
+constexpr int kKnobLabelDY = 30;    // amp kPedalLabelDY 12 — baseline below the control's edge
+constexpr int kKnobLabelMargin = 7; // amp kPedalLabelMargin 3 — bare face beside a legend
 
-// WHY 20 AND NOT SOMETHING ROUNDER. It is the largest size at which every legend on every face
-// fits its slot, and the binding constraint is the Delay's "Repeats": Michroma renders it 149
-// units wide at size 27, against a slot of kGridPitch - 6 = 112. One size for all five rather
-// than a per-face fit, because two plug-ins from the same set open side by side and a Boost whose
-// lettering is a third larger than a Delay's looks like a mistake rather than a fit.
-//
-// tools/panelrender measures every legend against this on every build; it is not a calculation
-// that can be trusted to stay true when a knob is renamed.
-constexpr int kGridSlotW = kGridPitch - 6;
+constexpr int kMaxKnobs = 4;
 
-// How many rows a face of n controls uses, and how many sit on a given row. Balanced rather than
-// filled: four controls are two and two, not three and one.
-constexpr int gridRows(int items)
+struct Point {
+    int x, y;
+};
+
+// Where knob k of n sits. The amp's pedalKnobPos, scaled — including its rule that an ODD count
+// puts its last knob on the centre line rather than leaving a hole.
+constexpr Point knobPos(int nKnobs, int k)
 {
-    return items <= kGridCols ? 1 : 2;
-}
-constexpr int gridRowItems(int items, int row)
-{
-    if (gridRows(items) == 1)
-        return items;
-    return row == 0 ? (items + 1) / 2 : items - (items + 1) / 2;
-}
-constexpr int gridCX(int items, int row, int col)
-{
-    const int n = gridRowItems(items, row);
-    return kFaceCX + (2 * col - (n - 1)) * kGridPitch / 2;
-}
-// A control's radius depends only on how many rows its face uses.
-constexpr int gridKnobR(int items)
-{
-    return gridRows(items) == 1 ? kKnobRSingle : kKnobR;
-}
-constexpr int gridCY(int items, int row)
-{
-    // A single row sits between the two row positions, so a three-control face is not
-    // top-heavy with an empty band under it.
-    return gridRows(items) == 1 ? (kGridRowCY[0] + kGridRowCY[1]) / 2 : kGridRowCY[row];
+    if (nKnobs <= 1)
+        return {kFaceCX, kKnob3Row1CY};
+    if (nKnobs <= 3) {
+        if (k == 2)
+            return {kFaceCX, kKnob3MidCY};
+        return {kFaceCX + (k == 0 ? -kKnob3DX : kKnob3DX), kKnob3Row1CY};
+    }
+    return {kFaceCX + ((k % 2 == 0) ? -kKnob4DX : kKnob4DX), (k < 2) ? kKnob4Row1CY : kKnob4Row2CY};
 }
 
-// The mini controls' plates, sized to sit in a grid slot like a dial does.
-constexpr int kMiniW = 104;
-constexpr int kMiniH = 44;
-constexpr int kMiniTextSize = 22;
+// How wide a legend may render before it reaches the border trim. It is centred on its knob, so
+// the binding edge is whichever side is nearer. tools/panelrender measures every legend on every
+// face against exactly this, in the real font — the amp learned that the hard way, with a
+// "Feedback" that passed a check against the pitch and then drew past the enclosure's edge.
+constexpr int knobLabelAllowance(int nKnobs, int k)
+{
+    const int cx = knobPos(nKnobs, k).x;
+    const int l = cx - kFaceLeft;
+    const int r = kFaceRight - cx;
+    return 2 * (l < r ? l : r) - 2 * kKnobLabelMargin;
+}
 
-// --- the lamp row: the bypass toggle and the lamp ---
-//
-// The bat toggle is the HOST's bypass (kBypassId) and not the footswitch (kSwitchId) — see the
-// note on those two in pedalids.h.
-//
-// IT SITS LEFT OF THE LAMP, not on the centre line, and its legend sits UNDER IT. Putting the
-// legend beside the toggle was tried first, to save the 27 units the stacked pair costs, and it
-// does not work: Michroma renders "BYPASS" 124 units wide at this size, so a legend starting
-// clear of the toggle ends up underneath the lamp. Stacked and pushed to the left of the face,
-// both fit with room, and the toggle is then plainly a different control from the footswitch on
-// the centre line below it — which is the distinction the whole arrangement has to carry.
-//
-// 42 x 68 keeps the art's own 112:184 aspect to within half a unit.
-constexpr int kToggleW = 42;
-constexpr int kToggleH = 68;
-constexpr int kToggleCX = 118;
-constexpr int kLampRowCY = 400;
-constexpr int kToggleCY = kLampRowCY;
-constexpr int kToggleLabelSize = 20;
-constexpr int kToggleLabelW = 126; // "BYPASS", Michroma at kToggleLabelSize — measured 124.4
-constexpr int kToggleLabelDY = 22; // baseline below the toggle's lower edge
-// A generous hit box: a bat switch is small and the thing being hit is a mouse pointer, not a
-// boot. It reaches down past the legend, because a legend under a switch reads as part of it.
-constexpr int kToggleHitW = 140;
-constexpr int kToggleHitX = kToggleCX - kToggleHitW / 2;
-constexpr int kToggleHitTop = kToggleCY - kToggleH / 2 - 8;
-constexpr int kToggleHitBottom = kToggleCY + kToggleH / 2 + kToggleLabelDY + 8;
-
+// --- the lamp ---
 constexpr int kLedCX = kFaceCX;
-constexpr int kLedCY = kLampRowCY;
-constexpr int kLedR = 17;
+constexpr int kLedCY = 365; // amp kPedalLedY 148
+constexpr int kLedR = 17;   // amp kPedalLedR 7
+
+// --- the mini controls ---
+//
+// A text plate rather than a dial, because what goes here is a list (the Delay's Sync) and a
+// two-state switch (its Ping-Pong) and neither reads as a rotation. They sit ON the lamp's row,
+// which is the only band with full width and nothing else in it, and they show their VALUE — the
+// amp letters no legend under them and there is no room for one here either: the plate ends at
+// 385 and the footswitch begins at 409.
+constexpr int kMiniCount = 2;
+constexpr int kMiniW = 143;                     // amp kPedalMiniW 58
+constexpr int kMiniH = 39;                      // amp kPedalMiniH 16
+constexpr int kMiniTextSize = 25;               // amp kPedalMiniSize 10
+constexpr int kMiniRadius = 7;                  // amp kPedalMiniRadius 3
+constexpr int kMiniCX[kMiniCount] = {135, 333}; // amp kPedalMiniCX 55, 135
+constexpr int kMiniCY = kLedCY;
 
 // --- footswitch ---
 constexpr int kSwitchCX = kFaceCX;
-constexpr int kSwitchCY = 540;
-constexpr int kSwitchR = 54;
+constexpr int kSwitchCY = 463; // amp kPedalSwitchY 188
+constexpr int kSwitchR = 54;   // amp kPedalSwitchR 22
 // The whole chrome cap is the target, and a little more: this is the control the plug-in is named
 // after and it should be impossible to miss.
 constexpr int kSwitchHitR = kSwitchR + 10;
 
+// --- the bypass toggle: the one control the pedalboard does not have ---
+//
+// Inside the amp a pedal has no host bypass of its own — the amp carries one for the whole
+// plug-in. Five separate plug-ins each need theirs, so this is the only addition to the ported
+// face, and it is put where it costs the layout nothing.
+//
+// ON THE FOOTSWITCH'S OWN ROW, TO ITS LEFT. That band is empty on all five faces, where the lamp
+// row above it is spoken for by the Delay's two mini plates; and standing the host's bypass
+// beside the pedal's own switch is what makes them read as the pair they are rather than as one
+// control drawn twice. Its legend is lettered smaller than the knobs' — "BYPASS" is a long word
+// in a narrow space, and at the knob size it would reach the footswitch's hit box.
+//
+// 42 x 68 keeps the switch art's own 112:184 aspect to within half a unit.
+constexpr int kToggleW = 42;
+constexpr int kToggleH = 68;
+constexpr int kToggleCX = 112;
+constexpr int kToggleCY = kSwitchCY;
+constexpr int kToggleLabelSize = 16;
+constexpr int kToggleLabelW = 100; // "BYPASS", Michroma at kToggleLabelSize — measured 99.5
+constexpr int kToggleLabelDY = 22; // baseline below the toggle's lower edge
+// A generous hit box: a bat switch is small and the thing being hit is a mouse pointer, not a
+// boot. It reaches down past the legend, because a legend under a switch reads as part of it.
+constexpr int kToggleHitW = 104;
+constexpr int kToggleHitX = kToggleCX - kToggleHitW / 2;
+constexpr int kToggleHitTop = kToggleCY - kToggleH / 2 - 8;
+constexpr int kToggleHitBottom = kToggleCY + kToggleH / 2 + kToggleLabelDY + 8;
+
 // --- the pedal's own name ---
-constexpr int kNameSize = 46;
-constexpr int kNameBaselineY = 650;
+constexpr int kNameSize = 49;       // amp kPedalNameSize 20
+constexpr int kNameBaselineY = 616; // amp kPedalNameY 250
+constexpr int kNameAllowance = kFaceRight - kFaceLeft - 2 * kKnobLabelMargin;
 
 //--------------------------------------------------------------------------------------------
 // THE STRIP, below the enclosure. One row: what the footswitch is learned to, and the two buttons
@@ -259,63 +262,79 @@ constexpr double kKnobSweepDeg = 270.0;
 // face with two things drawn on top of each other. What these CANNOT check is how wide a legend
 // actually renders; tools/panelrender does that, against the real font.
 
-// Horizontal: no control may hang over the printable face, on any row shape a table can produce.
-static_assert(gridCX(3, 0, 0) - kKnobRSingle > kFaceLeft &&
-                  gridCX(3, 0, 2) + kKnobRSingle < kFaceRight,
-              "a row of three does not fit inside the printable face");
-static_assert(gridCX(4, 0, 0) - kMiniW / 2 > kFaceLeft && gridCX(4, 0, 1) + kMiniW / 2 < kFaceRight,
-              "a row of two does not fit inside the printable face");
-static_assert(gridCX(6, 0, 0) - kMiniW / 2 > kFaceLeft && gridCX(6, 0, 2) + kMiniW / 2 < kFaceRight,
-              "a row of three mini plates does not fit inside the printable face");
-static_assert(kGridPitch >= 2 * kKnobRSingle && kGridPitch >= kMiniW,
-              "adjacent controls on a row overlap");
+// Horizontal: no control may hang over the printable face, on either face shape.
+static_assert(knobPos(3, 0).x - kKnobR > kFaceLeft && knobPos(3, 1).x + kKnobR < kFaceRight,
+              "a three-knob face's upper pair hangs over the printable face");
+static_assert(knobPos(4, 0).x - kKnobR > kFaceLeft && knobPos(4, 1).x + kKnobR < kFaceRight,
+              "a four-knob face's pairs hang over the printable face");
+static_assert(knobLabelAllowance(3, 0) > 0 && knobLabelAllowance(4, 0) > 0,
+              "a legend has no room to render in");
+static_assert(kMiniCX[0] - kMiniW / 2 >= kFaceLeft,
+              "the left mini plate runs on to the enclosure's border trim");
+static_assert(kMiniCX[1] + kMiniW / 2 <= kFaceRight,
+              "the right mini plate runs on to the enclosure's border trim");
+static_assert(kMiniCX[0] + kMiniW / 2 < kLedCX - kLedR && kMiniCX[1] - kMiniW / 2 > kLedCX + kLedR,
+              "a mini plate covers the lamp");
 
-// The readout is drawn ABOVE a dial while it is dragged, and must stay on the face.
-static_assert(kGridRowCY[0] - kKnobR - kKnobValueDY - kKnobValueSize > kFaceTop &&
-                  gridCY(3, 0) - kKnobRSingle - kKnobValueDY - kKnobValueSize > kFaceTop,
-              "a dragged dial's readout is drawn off the top of the face");
+// A three-knob face's upper legends sit BESIDE the centred lower dial, not above it, so the
+// clearance that matters there is horizontal. It is deliberately NOT asserted here: the allowance
+// above is the distance to the face's edge, and a legend rendered to the full width of it would
+// just touch the lower dial — so a compile-time check on the allowance would either fail on a
+// layout that is correct or have to be written against a number no legend actually reaches. What
+// matters is how wide each legend REALLY renders, which only the font can answer, so
+// tools/panelrender measures exactly this clearance on every build.
 
-// Vertical: the bands, in order, none of them touching.
-constexpr int kGridLabelBottom(int row)
+// Vertical: the bands, in order, none of them touching. A legend's descender is taken as a third
+// of its size, which is what the amp assumes and what panelrender confirms against the real font.
+constexpr int knobLabelBottom(int cy)
 {
-    return kGridRowCY[row] + kKnobR + kKnobLabelDY + kKnobLabelSize / 3;
+    return cy + kKnobR + kKnobLabelDY + kKnobLabelSize / 3;
 }
-static_assert(kGridLabelBottom(0) < kGridRowCY[1] - kKnobR,
-              "the upper row's legends collide with the lower row");
-static_assert(kGridLabelBottom(1) < kLampRowCY - kToggleH / 2,
-              "the lower row's legends collide with the bypass toggle");
-static_assert(gridCY(3, 0) + kKnobRSingle + kKnobLabelDY + kKnobLabelSize / 3 <
-                  kLampRowCY - kToggleH / 2,
-              "a one-row face's legends collide with the bypass toggle");
-static_assert(kLampRowCY + kToggleH / 2 + kToggleLabelDY + kToggleLabelSize / 3 <
-                  kSwitchCY - kSwitchR,
-              "the bypass legend collides with the footswitch");
+static_assert(knobLabelBottom(kKnob4Row1CY) < kKnob4Row2CY - kKnobR,
+              "a four-knob face's upper legends collide with its lower row");
+static_assert(knobLabelBottom(kKnob4Row2CY) < kMiniCY - kMiniH / 2 &&
+                  knobLabelBottom(kKnob4Row2CY) < kLedCY - kLedR,
+              "the lower row's legends collide with the lamp row");
+static_assert(knobLabelBottom(kKnob3MidCY) < kLedCY - kLedR,
+              "a three-knob face's lower legend collides with the lamp");
+static_assert(kMiniCY + kMiniH / 2 < kSwitchCY - kSwitchR,
+              "the mini plates collide with the footswitch");
+static_assert(kLedCY + kLedR < kSwitchCY - kSwitchR, "the lamp collides with the footswitch");
 static_assert(kSwitchCY + kSwitchR < kNameBaselineY - kNameSize,
               "the footswitch collides with the pedal's name");
 static_assert(kNameBaselineY + kNameSize / 4 < kFaceBottom,
               "the pedal's name is drawn off the bottom of the face");
+static_assert(kKnob4Row1CY - kKnobR > kFaceTop && kKnob3Row1CY - kKnobR > kFaceTop,
+              "the top row of dials is drawn off the top of the face");
 
-// The toggle, its legend and the lamp share one row without meeting. The legend is the wide part
-// and is what these are really about — see the note on kToggleLabelW.
-static_assert(kToggleCX + kToggleLabelW / 2 < kLedCX - kLedR - 8,
-              "the bypass legend runs into the lamp");
+// The bypass toggle shares the footswitch's row and must not touch it, nor hang off the face.
+// The legend is the wide part and is what these are really about — see the note on kToggleLabelW.
+static_assert(kToggleCX + kToggleLabelW / 2 < kSwitchCX - kSwitchHitR,
+              "the bypass legend reaches the footswitch's hit box");
 static_assert(kToggleCX - kToggleLabelW / 2 > kFaceLeft,
               "the bypass legend hangs over the printable face");
-static_assert(kToggleHitX + kToggleHitW < kLedCX - kLedR,
-              "the bypass toggle's hit box reaches the lamp");
+static_assert(kToggleHitX + kToggleHitW < kSwitchCX - kSwitchHitR,
+              "the bypass toggle's hit box overlaps the footswitch's");
+static_assert(kToggleCY - kToggleH / 2 > kMiniCY + kMiniH / 2,
+              "the bypass toggle reaches up into the lamp row");
+static_assert(kToggleCY + kToggleH / 2 + kToggleLabelDY + kToggleLabelSize / 3 <
+                  kNameBaselineY - kNameSize,
+              "the bypass legend collides with the pedal's name");
 
 // The strip's own row: the two buttons and the value text must not overlap.
 static_assert(kStripValueW > 120, "the binding text has no room left beside the buttons");
 static_assert(kStripClearX > kStripValueX, "the strip's buttons overrun its label");
 static_assert(kStripRowY + kStripRowH <= kWindowH, "the strip's row is taller than the strip");
 
-// Every pedal's table must produce a grid this file can actually draw.
-static_assert(knobCount(kBoostParams) + miniCount(kBoostParams) <= kGridCols * kGridRows &&
-                  knobCount(kChorusParams) + miniCount(kChorusParams) <= kGridCols * kGridRows &&
-                  knobCount(kFlangerParams) + miniCount(kFlangerParams) <= kGridCols * kGridRows &&
-                  knobCount(kDelayParams) + miniCount(kDelayParams) <= kGridCols * kGridRows &&
-                  knobCount(kReverbParams) + miniCount(kReverbParams) <= kGridCols * kGridRows,
-              "a pedal has more controls than the grid has slots");
+// Every pedal's table must produce a face this file can actually draw.
+static_assert(knobCount(kBoostParams) <= kMaxKnobs && knobCount(kChorusParams) <= kMaxKnobs &&
+                  knobCount(kFlangerParams) <= kMaxKnobs && knobCount(kDelayParams) <= kMaxKnobs &&
+                  knobCount(kReverbParams) <= kMaxKnobs,
+              "a pedal has more knobs than the face has positions");
+static_assert(miniCount(kBoostParams) <= kMiniCount && miniCount(kChorusParams) <= kMiniCount &&
+                  miniCount(kFlangerParams) <= kMiniCount &&
+                  miniCount(kDelayParams) <= kMiniCount && miniCount(kReverbParams) <= kMiniCount,
+              "a pedal has more mini controls than the lamp row has slots");
 
 } // namespace geo
 } // namespace Rations

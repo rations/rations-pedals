@@ -315,30 +315,27 @@ private:
         return lx >= 0 && ly >= 0 && lx < geo::kWindowW && ly < geo::kWindowH;
     }
 
-    // Which grid slot a point is in, in the same order the painter lays them out: knobs first,
-    // then mini controls. -1 for none. Shares gridCX/gridCY with the painter, which is what keeps
-    // the hit test and the picture from drifting apart.
+    // Which control a point is in, in the same order the painter lays them out: knobs first, then
+    // mini controls. -1 for none. Shares knobPos and the mini slots with the painter, which is
+    // what keeps the hit test and the picture from drifting apart.
+    //
+    // The knob hit radius is a little larger than the dial, the way the pedalboard's is: the
+    // target is a mouse pointer and the four units cost nothing, because nothing else on the face
+    // is within them.
     int hitGrid(float lx, float ly) const
     {
         const int knobs = knobCount(kParams);
-        const int items = knobs + miniCount(kParams);
-        const float r = float(geo::gridKnobR(items));
-        int item = 0;
-        for (int row = 0; row < geo::gridRows(items); ++row) {
-            const int n = geo::gridRowItems(items, row);
-            const float cy = float(geo::gridCY(items, row));
-            for (int col = 0; col < n; ++col, ++item) {
-                const float cx = float(geo::gridCX(items, row, col));
-                if (item < knobs) {
-                    const float dx = lx - cx, dy = ly - cy;
-                    if (dx * dx + dy * dy <= r * r)
-                        return item;
-                } else {
-                    if (std::fabs(lx - cx) <= geo::kMiniW * 0.5f &&
-                        std::fabs(ly - cy) <= geo::kMiniH * 0.5f)
-                        return item;
-                }
-            }
+        const float r = float(geo::kKnobR) + 10.0f;
+        for (int k = 0; k < knobs; ++k) {
+            const geo::Point pt = geo::knobPos(knobs, k);
+            const float dx = lx - float(pt.x), dy = ly - float(pt.y);
+            if (dx * dx + dy * dy <= r * r)
+                return k;
+        }
+        for (int m = 0, minis = miniCount(kParams); m < minis && m < geo::kMiniCount; ++m) {
+            if (std::fabs(lx - float(geo::kMiniCX[m])) <= geo::kMiniW * 0.5f &&
+                std::fabs(ly - float(geo::kMiniCY)) <= geo::kMiniH * 0.5f)
+                return knobs + m;
         }
         return -1;
     }

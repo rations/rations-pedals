@@ -58,11 +58,17 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-The five bundles land in `build/VST3/Release/`. Install them by copying the ones you want to
-`~/.vst3/`:
+The five bundles land in `build/VST3/Release/`, and the five JACK applications in `build/`.
+Install them by copying the ones you want to `~/.vst3/`:
 
 ```sh
 mkdir -p ~/.vst3 && cp -r build/VST3/Release/Rations*.vst3 ~/.vst3/
+```
+
+or build a release tarball with an `install.sh` in it:
+
+```sh
+./scripts/makedist-linux.sh          # -> dist/RationsPedals-<version>-linux-x86_64.tar.gz
 ```
 
 If you already have the SDK checked out somewhere, point the build at it with
@@ -79,9 +85,22 @@ cmake -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-win -j"$(nproc)"
 ```
 
-The release scripts that stage, strip and verify these builds — `scripts/makedist-linux.sh`,
-`scripts/makedist-windows.sh` and the NSIS installer — are not written yet, and neither are the
-JACK standalone hosts. Building and installing by hand, as above, is the supported route today.
+`scripts/makedist-windows.sh` and the NSIS installer are not written yet; the Windows build
+above produces the bundles, but staging, stripping and the Wine verification are still to come.
+
+## Playing a pedal without a DAW
+
+Each pedal is also a JACK application — the same bundle, hosted in a window of its own with a MIDI
+port for a footswitch:
+
+```sh
+build/rations-delay-standalone
+```
+
+It registers `RationsDelay:in` (mono, as a guitar is), `RationsDelay:out_l` and `out_r`, connected
+to the first physical ports it finds, plus `RationsDelay:midi_in`, which is left unconnected on
+purpose. Where the knobs were left is remembered in `~/.config/RationsPedals/`; `--no-state` skips
+that. These are built only when JACK's development headers are present, and never on Windows.
 
 ## Verifying a build
 

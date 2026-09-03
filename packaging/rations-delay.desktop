@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rations Delay
+GenericName=Guitar Delay
+Comment=Tempo-syncable delay with optional ping-pong (JACK)
+Exec=rations-delay-standalone
+Icon=rations-delay
+Terminal=false
+Categories=AudioVideo;Audio;X-Digital_Processing;
+Keywords=guitar;pedal;stompbox;effect;delay;JACK;VST3;
+StartupNotify=false
+StartupWMClass=Rations Delay

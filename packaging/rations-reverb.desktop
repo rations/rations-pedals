@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rations Reverb
+GenericName=Guitar Reverb
+Comment=Freeverb-lineage room reverb (JACK)
+Exec=rations-reverb-standalone
+Icon=rations-reverb
+Terminal=false
+Categories=AudioVideo;Audio;X-Digital_Processing;
+Keywords=guitar;pedal;stompbox;effect;reverb;JACK;VST3;
+StartupNotify=false
+StartupWMClass=Rations Reverb

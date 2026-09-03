@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rations Flanger
+GenericName=Guitar Flanger
+Comment=Swept comb filter with feedback (JACK)
+Exec=rations-flanger-standalone
+Icon=rations-flanger
+Terminal=false
+Categories=AudioVideo;Audio;X-Digital_Processing;
+Keywords=guitar;pedal;stompbox;effect;flanger;JACK;VST3;
+StartupNotify=false
+StartupWMClass=Rations Flanger

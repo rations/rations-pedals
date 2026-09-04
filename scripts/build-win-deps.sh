@@ -67,6 +67,28 @@ PIXMAN=pixman-0.44.0
 FREETYPE=freetype-2.13.3
 CAIRO=cairo-1.18.4
 
+# SHA-256 OF EACH RELEASE TARBALL, and the reason the download step is not just a curl.
+#
+# These five trees ARE the Windows editor. The build gate that compares the Windows render of
+# each pedal's face against the Linux one pixel for pixel is only meaningful because both sides
+# rasterise through the same FreeType and composite through the same cairo and pixman; a mirror
+# that served a different tarball would move glyph rasterisation and turn that comparison into a
+# comparison of nothing, or worse, ship altered code inside a plug-in that is otherwise entirely
+# auditable from source. Two of the five downloads reach SourceForge, which redirects to
+# community-run mirrors, so "it came over HTTPS" says only that some mirror was authentic.
+#
+# Verified on 2026-09-04, not transcribed from memory: cairo and pixman against the .sha256sum
+# and .sha512 files published beside the releases on cairographics.org, and zlib, libpng and
+# freetype by re-downloading each from its canonical host (github.com/madler, SourceForge's
+# libpng and freetype projects) and comparing the bytes. FreeType additionally publishes a
+# detached GPG signature on Savannah, which is the stronger check when that host is reachable;
+# it was returning 502 at the time and the re-download stood in for it.
+ZLIB_SHA256=38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32
+LIBPNG_SHA256=46fd06ff37db1db64c0dc288d78a3f5efd23ad9ac41561193f983e20937ece03
+PIXMAN_SHA256=89a4c1e1e45e0b23dffe708202cb2eaffde0fe3727d7692b2e1739fec78a7dac
+FREETYPE_SHA256=0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289
+CAIRO_SHA256=445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb
+
 mkdir -p "$DL" "$BUILD" "$SYSROOT/lib/pkgconfig" "$SYSROOT/include"
 
 command -v "$TRIPLE-gcc" >/dev/null || { echo "error: $TRIPLE-gcc not found" >&2; exit 1; }
@@ -81,10 +103,24 @@ die()  { echo "error: $*" >&2; exit 1; }
 done_stamp() { [ -f "$BUILD/.$1.stamp" ]; }
 mark()       { touch "$BUILD/.$1.stamp"; }
 
-fetch() { # url filename
-    [ -f "$DL/$2" ] && return 0
-    echo "fetching $2"
-    curl -sSL -o "$DL/$2.part" "$1" && mv "$DL/$2.part" "$DL/$2"
+# A CACHED tarball is checked as well as a freshly fetched one. What has to be true is that the
+# bytes being built are the pinned ones, and a stale or edited $DL is as good a way to lose that
+# as a substituted mirror; skipping the check on a cache hit would mean the digest only ever
+# guarded the very first build on a machine.
+fetch() { # url filename sha256
+    if [ ! -f "$DL/$2" ]; then
+        echo "fetching $2"
+        curl -sSL --retry 3 -o "$DL/$2.part" "$1" || die "could not download $2 from $1"
+        mv "$DL/$2.part" "$DL/$2"
+    fi
+    GOT="$(sha256sum "$DL/$2" | awk '{ print $1 }')"
+    if [ "$GOT" != "$3" ]; then
+        echo "error: $2 does not match the SHA-256 this script pins." >&2
+        echo "  expected $3" >&2
+        echo "  got      $GOT" >&2
+        echo "Delete $DL/$2 and re-run to rule out a truncated download. If it still differs," >&2
+        die "a mirror is serving something other than the pinned release; do not build on it."
+    fi
 }
 
 unpack() { # tarball dirname
@@ -135,7 +171,7 @@ MESON_COMMON=(
 #---------------------------------------------------------------------------
 if ! done_stamp zlib; then
     say "zlib $ZLIB"
-    fetch https://github.com/madler/zlib/releases/download/v1.3.1/$ZLIB.tar.xz $ZLIB.tar.xz
+    fetch https://github.com/madler/zlib/releases/download/v1.3.1/$ZLIB.tar.xz $ZLIB.tar.xz "$ZLIB_SHA256"
     unpack $ZLIB.tar.xz $ZLIB
     make -C "$ROOT/$ZLIB" -f win32/Makefile.gcc clean >/dev/null 2>&1 || true
     make -C "$ROOT/$ZLIB" -f win32/Makefile.gcc -j"$JOBS" \
@@ -163,7 +199,7 @@ fi
 #---------------------------------------------------------------------------
 if ! done_stamp libpng; then
     say "libpng $LIBPNG"
-    fetch https://downloads.sourceforge.net/project/libpng/libpng16/1.6.48/$LIBPNG.tar.xz $LIBPNG.tar.xz
+    fetch https://downloads.sourceforge.net/project/libpng/libpng16/1.6.48/$LIBPNG.tar.xz $LIBPNG.tar.xz "$LIBPNG_SHA256"
     unpack $LIBPNG.tar.xz $LIBPNG
     cmake -S "$ROOT/$LIBPNG" -B "$BUILD/$LIBPNG" -G Ninja \
         -DCMAKE_SYSTEM_NAME=Windows \
@@ -191,7 +227,7 @@ fi
 #---------------------------------------------------------------------------
 if ! done_stamp pixman; then
     say "pixman $PIXMAN"
-    fetch https://cairographics.org/releases/$PIXMAN.tar.gz $PIXMAN.tar.gz
+    fetch https://cairographics.org/releases/$PIXMAN.tar.gz $PIXMAN.tar.gz "$PIXMAN_SHA256"
     unpack $PIXMAN.tar.gz $PIXMAN
     meson setup "$BUILD/$PIXMAN" "$ROOT/$PIXMAN" "${MESON_COMMON[@]}" \
         -Dgtk=disabled -Dlibpng=disabled -Dtests=disabled -Ddemos=disabled \
@@ -208,7 +244,7 @@ fi
 #---------------------------------------------------------------------------
 if ! done_stamp freetype; then
     say "freetype $FREETYPE"
-    fetch https://downloads.sourceforge.net/project/freetype/freetype2/2.13.3/$FREETYPE.tar.xz $FREETYPE.tar.xz
+    fetch https://downloads.sourceforge.net/project/freetype/freetype2/2.13.3/$FREETYPE.tar.xz $FREETYPE.tar.xz "$FREETYPE_SHA256"
     unpack $FREETYPE.tar.xz $FREETYPE
 
     # freetype's meson.build defines DLL_EXPORT on Windows unconditionally:
@@ -263,7 +299,7 @@ fi
 #---------------------------------------------------------------------------
 if ! done_stamp cairo; then
     say "cairo $CAIRO"
-    fetch https://cairographics.org/releases/$CAIRO.tar.xz $CAIRO.tar.xz
+    fetch https://cairographics.org/releases/$CAIRO.tar.xz $CAIRO.tar.xz "$CAIRO_SHA256"
     unpack $CAIRO.tar.xz $CAIRO
     meson setup "$BUILD/$CAIRO" "$ROOT/$CAIRO" "${MESON_COMMON[@]}" \
         -Dfreetype=enabled -Dpng=enabled -Dzlib=enabled \

@@ -9,6 +9,8 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#include <dlfcn.h>
+
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
@@ -101,17 +103,32 @@ int16 virtualKeyFromKeySym(KeySym sym)
 // re-embed — takes the whole host process down with it. Replace it with a
 // handler that logs and returns.
 //
-// Ownership/threading: gOurDisplays, gPreviousErrorHandler and gErrorHandlerOnce
+// Ownership/threading: gOurDisplays, gPreviousErrorHandler and gHandlerInstalled
 // are process-wide and guarded by gErrorMutex. Displays are added in
 // openWindow() and removed in closeWindow(), both of which run on the host's
 // run-loop thread; the handler itself can be entered from any thread that makes
 // an X call, which is why the lock is taken there too. Errors on a display that
 // is not ours are forwarded to whatever handler the host had installed, so this
 // never swallows the host's own diagnostics.
+//
+// THE HANDLER IS UNINSTALLED AGAIN when the last of our displays goes, and that
+// is not tidiness. Xlib keeps ONE process-global handler pointer, and this code
+// lives in a bundle the host may dlclose — these plug-ins are built to be
+// unloadable, with the release gate requiring zero STB_GNU_UNIQUE symbols
+// precisely so the loader can unload them. A handler left installed across that
+// unload is a pointer into unmapped memory, and the next X error anywhere in the
+// host process, from any library, jumps into it. With sibling bundles loaded at
+// once it compounds: each one's gPreviousErrorHandler chains to the previously
+// loaded one's handler, so unloading any of them leaves the rest forwarding into
+// a hole.
+//
+// gHandlerInstalled is a plain bool rather than a std::once_flag because a
+// once_flag cannot be reset: after the last editor closes, the next one to open
+// has to be able to install again.
 std::mutex gErrorMutex;
 std::vector<::Display *> gOurDisplays;
 XErrorHandler gPreviousErrorHandler = nullptr;
-std::once_flag gErrorHandlerOnce;
+bool gHandlerInstalled = false;
 
 // Counts errors on our own connections. X requests are asynchronous, so a
 // rejected CreateWindow does not fail in place — the only way to find out is to
@@ -150,9 +167,15 @@ int xErrorHandler(::Display *display, XErrorEvent *event)
 
 void registerDisplay(::Display *display)
 {
-    std::call_once(gErrorHandlerOnce,
-                   [] { gPreviousErrorHandler = XSetErrorHandler(xErrorHandler); });
+    // Installed under the same lock that guards the list, so "the handler is in
+    // place" and "we have a display to answer for" can never disagree.
+    // XSetErrorHandler only swaps Xlib's global pointer and cannot re-enter this
+    // handler, so holding the lock across it is safe.
     std::lock_guard<std::mutex> lock(gErrorMutex);
+    if (!gHandlerInstalled) {
+        gPreviousErrorHandler = XSetErrorHandler(xErrorHandler);
+        gHandlerInstalled = true;
+    }
     gOurDisplays.push_back(display);
 }
 
@@ -162,9 +185,55 @@ void unregisterDisplay(::Display *display)
     for (size_t i = 0; i < gOurDisplays.size(); ++i) {
         if (gOurDisplays[i] == display) {
             gOurDisplays.erase(gOurDisplays.begin() + static_cast<ptrdiff_t>(i));
-            return;
+            break;
         }
     }
+
+    if (!gOurDisplays.empty() || !gHandlerInstalled)
+        return;
+
+    // Nothing of ours is left on any connection, so put back what was here
+    // before — see the note above for why leaving it installed is a dangling
+    // pointer rather than an untidy one.
+    //
+    // ONLY IF WE ARE STILL THE ONE INSTALLED. Another library may have installed
+    // its own handler after ours and be chaining to us; dropping ours out of the
+    // middle of that chain would take its handler out of circuit as well. Xlib
+    // has no call that reads the current handler without also setting it, so the
+    // set IS the read: XSetErrorHandler returns what was there, and if that is
+    // not our own function we put it straight back and leave the chain alone.
+    XErrorHandler current = XSetErrorHandler(gPreviousErrorHandler);
+    if (current != &xErrorHandler) {
+        XSetErrorHandler(current);
+        return;
+    }
+
+    // AND NOT IF WHAT WE ARE PUTTING BACK HAS ITSELF BEEN UNLOADED. With sibling
+    // bundles this is the ordinary case, not an exotic one: each one that opens
+    // an editor chains to the handler the previously opened one installed, so if
+    // that sibling is removed from the session first, the pointer we saved now
+    // aims into unmapped memory and restoring it would install exactly the
+    // dangling handler this whole path exists to avoid. Measured with two
+    // bundles: without this check, closing the second editor after the first
+    // bundle had been unloaded left the handler pointing into the gone one.
+    //
+    // dladdr answers it — it fails for an address that is in no loaded object,
+    // confirmed on this machine against a dlclose'd library. There is no way to
+    // recover the handler that sibling was itself chaining to, so the fallback
+    // is Xlib's default: it loses a handler the host may have installed before
+    // any of this, which is a real cost, and it is still the only choice that
+    // cannot jump into freed code.
+    if (gPreviousErrorHandler) {
+        Dl_info info;
+        if (dladdr(reinterpret_cast<void *>(gPreviousErrorHandler), &info) == 0) {
+            fprintf(stderr, "Rations Pedals: the X error handler we chained to has been "
+                            "unloaded; falling back to Xlib's default\n");
+            XSetErrorHandler(nullptr);
+        }
+    }
+
+    gHandlerInstalled = false;
+    gPreviousErrorHandler = nullptr;
 }
 
 //------------------------------------------------------------------------
@@ -582,8 +651,16 @@ void X11PlugView::closeWindow()
             XFreeColormap(mDisplay, mOwnedColormap);
             mOwnedColormap = None;
         }
-        unregisterDisplay(mDisplay);
+        // CLOSE FIRST, THEN UNREGISTER. Unregistering the last display puts the
+        // host's own error handler back, and XCloseDisplay is one of the calls
+        // most likely to report a teardown error — it flushes what is queued and
+        // delivers whatever comes back. Restoring before it would hand exactly
+        // the BadWindow this handler exists to survive to Xlib's default one,
+        // which calls exit() and takes the host down. Afterwards the pointer is
+        // only ever compared, never dereferenced, so unregistering a display
+        // that has just been closed is safe.
         XCloseDisplay(mDisplay);
+        unregisterDisplay(mDisplay);
         mDisplay = nullptr;
     }
     mWindow = 0;

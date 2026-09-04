@@ -52,8 +52,10 @@ endif()
 # ---------------------------------------------------------------------------
 # The VST 3 SDK.
 #
-# The in-tree submodule, pinned; /home/human/third_party/vst3sdk is the read-only reference tree
-# every SDK fact is checked against, and is deliberately NOT what builds.
+# The in-tree submodule, pinned to one commit, is what builds. A pristine checkout of that same
+# commit is kept OUTSIDE this tree as the read-only reference every SDK fact is verified against,
+# so that reading the SDK and building against it cannot drift into the same copy. -DVST3_SDK_DIR
+# points the build at another copy and must produce an identical build.
 # ---------------------------------------------------------------------------
 if(NOT TARGET sdk)
     set(VST3_SDK_DIR "${RPEDALS_ROOT}/vst3sdk" CACHE PATH "VST 3 SDK source tree")

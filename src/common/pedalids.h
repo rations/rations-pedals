@@ -19,6 +19,8 @@
 // reordered and never renumbered, or an old project's values land on the wrong control.
 #pragma once
 
+#include "dsp/finite.h"
+
 #include "pluginterfaces/vst/vsttypes.h"
 
 #include <cmath>
@@ -268,6 +270,12 @@ inline constexpr int miniCount(const ParamList &list)
 // function, so the controller's RangeParameter and this can never disagree about a range.
 inline double pedalPlain(const PedalParamSpec &spec, double norm)
 {
+    // The non-finite test comes FIRST and is a bit test, not a comparison. This is the boundary
+    // between a normalized parameter and a filter coefficient, so it has to be total — and under
+    // -ffast-math a NaN satisfies neither `< 0.0` nor `> 1.0`, so a plain two-sided clamp would
+    // hand it straight to the DSP. See dsp/finite.h.
+    if (!dsp::isFinite(norm))
+        norm = 0.0;
     norm = norm < 0.0 ? 0.0 : (norm > 1.0 ? 1.0 : norm);
     if (spec.kind == PedalParamKind::List)
         return std::floor(norm * (spec.max - spec.min) + 0.5) + spec.min;

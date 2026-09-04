@@ -297,14 +297,19 @@ public:
         if (!s.readInt32(count) || count < 0 || count > kParamStateMax)
             return Steinberg::kResultFalse;
 
+        // A non-finite value is a MALFORMED blob rather than a value to be clamped: nothing
+        // this plug-in writes can produce one, so it means a corrupted file or a foreign writer,
+        // and the contract for a malformed blob is that the whole read fails and nothing at all
+        // is applied. clamp01 would contain it too, but refusing here is what makes the host
+        // fall back to the defaults visibly instead of loading a project that is quietly wrong.
         double values[kParamStateMax];
         for (Steinberg::int32 i = 0; i < count; ++i)
-            if (!s.readDouble(values[i]))
+            if (!s.readDouble(values[i]) || !dsp::isFinite(values[i]))
                 return Steinberg::kResultFalse;
 
         Steinberg::int32 binding = 0;
         double bypass = 0.0;
-        if (!s.readInt32(binding) || !s.readDouble(bypass))
+        if (!s.readInt32(binding) || !s.readDouble(bypass) || !dsp::isFinite(bypass))
             return Steinberg::kResultFalse;
 
         // Only now, with everything read and nothing having failed, is anything published.
@@ -376,8 +381,18 @@ public:
     }
 
 private:
+    // Total on every double a host can send, NaN and infinity included. A plain two-sided clamp
+    // is not: `v < 0.0` and `v > 1.0` are both false for a NaN, so it passes straight through,
+    // and the parameter smoothers downstream are absorbing — their update is
+    // mCur += (target - mCur) * alpha, which stays NaN forever once target is, and their snap
+    // test never fires because it compares a NaN distance. One such value silently poisons a
+    // pedal's output until the footswitch is stomped off and back on. Rewriting the comparison
+    // does not fix it either, because these targets are built with -ffast-math; the test has to
+    // read the bits. See dsp/finite.h.
     static double clamp01(double v)
     {
+        if (!dsp::isFinite(v))
+            return 0.0;
         return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
     }
 

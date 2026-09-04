@@ -167,13 +167,16 @@ public:
         int32 count = 0;
         if (!s.readInt32(count) || count < 0 || count > kParamStateMax)
             return kResultFalse;
+        // Non-finite values are refused here for the same reason and on the same terms as in
+        // PedalProcessor::setState — the two readers must accept and reject exactly the same
+        // bytes, or the panel and the audio disagree about what loaded.
         double values[kParamStateMax];
         for (int32 i = 0; i < count; ++i)
-            if (!s.readDouble(values[i]))
+            if (!s.readDouble(values[i]) || !dsp::isFinite(values[i]))
                 return kResultFalse;
         int32 binding = 0;
         double bypass = 0.0;
-        if (!s.readInt32(binding) || !s.readDouble(bypass))
+        if (!s.readInt32(binding) || !s.readDouble(bypass) || !dsp::isFinite(bypass))
             return kResultFalse;
 
         for (int32 i = 0; i < count && i < kParamCount; ++i)

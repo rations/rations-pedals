@@ -30,6 +30,10 @@
 #endif
 #define stringCompanyName "rations"
 #define stringCompanyWeb "https://github.com/rations"
-#define stringCompanyEmail "mailto:ehqcar@proton.me"
+// The SDK's factory declaration takes a contact string, and whatever is put here is compiled
+// into all five binaries, written into each bundle's moduleinfo.json and shown in hosts' plug-in
+// information panels. It is public by construction, so it names the project page rather than a
+// personal mailbox.
+#define stringCompanyEmail stringCompanyWeb
 #define stringLegalCopyright "MIT licence; see NOTICE for the components redistributed with it"
 #define stringLegalTrademarks "VST is a trademark of Steinberg Media Technologies GmbH"

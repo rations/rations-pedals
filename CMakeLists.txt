@@ -27,6 +27,28 @@ if(WIN32)
 endif()
 
 # ---------------------------------------------------------------------------
+# What to build. Both default ON, so building this repository on its own is unchanged.
+#
+# THEY EXIST BECAUSE THIS PROJECT IS ALSO CONSUMED AS A SUBDIRECTORY. NAMp Rack pins this tree as a
+# submodule and add_subdirectory()s it, so that the five bundles it ships are built by its own
+# build and pinned to one commit of this one, rather than copied in from somewhere. That was
+# already anticipated here -- the SDK block below is guarded `if(NOT TARGET sdk)` precisely so a
+# parent that has already added the SDK is not made to add it twice -- but two things were not:
+#
+#   * `panelrender` is a target NAME, and the rack has one of its own. Two add_executable() calls
+#     for one name is a hard CMake error, and it was the only collision between the two trees.
+#   * The rack ships bundles and nothing else. It is itself the host, so five JACK standalones and
+#     three offline proofs are build time spent on binaries it will never package.
+#
+# The proofs are not weakened by this. pedalcheck, loadall and panelrender are THIS project's
+# gates and they run in THIS project's build and release scripts, which is where the pedals are
+# proved before they are pinned. A consumer switching them off is not skipping a check; it is
+# declining to re-run somebody else's.
+# ---------------------------------------------------------------------------
+option(RPEDALS_BUILD_TOOLS       "Build the offline proof and render tools" ON)
+option(RPEDALS_BUILD_STANDALONES "Build the five JACK standalones (Linux)"  ON)
+
+# ---------------------------------------------------------------------------
 # Symbol visibility: hidden by default, for everything we compile.
 #
 # A correctness requirement, not an optimisation, and this project is the exact situation that
@@ -327,69 +349,76 @@ foreach(_pedal IN LISTS RPEDALS_PEDALS)
 endforeach()
 
 # ---------------------------------------------------------------------------
-# loadall — the five bundles in ONE process, which is the situation the visibility rules in this
-# project exist for and the one thing no per-bundle check can see. It is a host, so it loads the
-# built bundles rather than linking the plug-in code, and it needs the SDK's module loader for
-# whichever platform it is built on. See tools/loadall.cpp.
+# The offline proofs and the render tool, behind RPEDALS_BUILD_TOOLS. See the option at the top
+# of this file: a parent project that embeds this tree has a `panelrender` target of its own, and
+# these are this project's gates rather than its product.
 # ---------------------------------------------------------------------------
-if(RPEDALS_WINDOWS)
-    set(RPEDALS_HOST_MODULE_LOADER
-        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_win32.cpp)
-else()
-    set(RPEDALS_HOST_MODULE_LOADER
-        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_linux.cpp)
+if(RPEDALS_BUILD_TOOLS)
+    # ---------------------------------------------------------------------------
+    # loadall — the five bundles in ONE process, which is the situation the visibility rules in this
+    # project exist for and the one thing no per-bundle check can see. It is a host, so it loads the
+    # built bundles rather than linking the plug-in code, and it needs the SDK's module loader for
+    # whichever platform it is built on. See tools/loadall.cpp.
+    # ---------------------------------------------------------------------------
+    if(RPEDALS_WINDOWS)
+        set(RPEDALS_HOST_MODULE_LOADER
+            ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_win32.cpp)
+    else()
+        set(RPEDALS_HOST_MODULE_LOADER
+            ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/module_linux.cpp)
+    endif()
+
+    add_executable(loadall
+        ${RPEDALS_ROOT}/tools/loadall.cpp
+        ${RPEDALS_HOST_MODULE_LOADER}
+        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
+        # The footswitch is switched on through a real input parameter queue, which is the only route
+        # a plug-in has to accept. Not in sdk_hosting.
+        ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/parameterchanges.cpp
+        ${VST3_SDK_DIR}/public.sdk/samples/vst-hosting/editorhost/source/usediids.cpp
+    )
+    target_include_directories(loadall PRIVATE ${RPEDALS_ROOT}/src ${VST3_SDK_DIR})
+    target_link_libraries(loadall PRIVATE sdk_hosting)
+    target_compile_features(loadall PRIVATE cxx_std_17)
+    target_compile_options(loadall PRIVATE -Wall -Wextra)
+    # Nothing to load until they are built.
+    foreach(_pedal IN LISTS RPEDALS_PEDALS)
+        add_dependencies(loadall ${RPEDALS_TARGET_${_pedal}})
+    endforeach()
+
+    # ---------------------------------------------------------------------------
+    # panelrender — the offline face renderer and the geometry audit. Links PedalsGfx and nothing
+    # else: no VST3, no X11, no Win32, which is what lets it be the first thing built and run when a
+    # Windows toolchain is being brought up, and what lets scripts/makedist-windows.sh diff its output
+    # against the native build's. See tools/panelrender.cpp.
+    # ---------------------------------------------------------------------------
+    add_executable(panelrender
+        ${RPEDALS_ROOT}/tools/panelrender.cpp
+        ${RPEDALS_ROOT}/src/common/pedalface.cpp
+        # ...and the description layer, so the strip's binding text is measured against the real font
+        # like every other string. It brings in pluginterfaces' typedefs and nothing else.
+        ${RPEDALS_ROOT}/src/common/midilearn.cpp
+    )
+    target_include_directories(panelrender PRIVATE
+        ${RPEDALS_ROOT}/src ${RPEDALS_ROOT}/deps ${RPEDALS_ROOT}/vst3sdk)
+    target_link_libraries(panelrender PRIVATE PedalsGfx pluginterfaces)
+    target_compile_features(panelrender PUBLIC cxx_std_17)
+    target_compile_options(panelrender PRIVATE -Wall -Wextra)
+
+    # ---------------------------------------------------------------------------
+    # pedalcheck — the DSP proofs. Links the pedal headers directly: no VST3, no host, no audio
+    # device, so it runs anywhere the compiler does. See tools/pedalcheck.cpp for what the two kinds
+    # of check are for.
+    # ---------------------------------------------------------------------------
+    add_executable(pedalcheck ${RPEDALS_ROOT}/tools/pedalcheck.cpp)
+    target_include_directories(pedalcheck PRIVATE
+        ${RPEDALS_ROOT}/src ${RPEDALS_ROOT}/deps ${RPEDALS_ROOT}/vst3sdk)
+    target_compile_features(pedalcheck PUBLIC cxx_std_17)
+    # -ffast-math, and it is NOT optional: the golden hashes were recorded from a build that had it,
+    # and the plug-ins are compiled with it. A check built without it would be checking different
+    # arithmetic from the one that ships.
+    target_compile_options(pedalcheck PRIVATE -ffast-math -Wall -Wextra)
 endif()
-
-add_executable(loadall
-    ${RPEDALS_ROOT}/tools/loadall.cpp
-    ${RPEDALS_HOST_MODULE_LOADER}
-    ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
-    # The footswitch is switched on through a real input parameter queue, which is the only route
-    # a plug-in has to accept. Not in sdk_hosting.
-    ${VST3_SDK_DIR}/public.sdk/source/vst/hosting/parameterchanges.cpp
-    ${VST3_SDK_DIR}/public.sdk/samples/vst-hosting/editorhost/source/usediids.cpp
-)
-target_include_directories(loadall PRIVATE ${RPEDALS_ROOT}/src ${VST3_SDK_DIR})
-target_link_libraries(loadall PRIVATE sdk_hosting)
-target_compile_features(loadall PRIVATE cxx_std_17)
-target_compile_options(loadall PRIVATE -Wall -Wextra)
-# Nothing to load until they are built.
-foreach(_pedal IN LISTS RPEDALS_PEDALS)
-    add_dependencies(loadall ${RPEDALS_TARGET_${_pedal}})
-endforeach()
-
-# ---------------------------------------------------------------------------
-# panelrender — the offline face renderer and the geometry audit. Links PedalsGfx and nothing
-# else: no VST3, no X11, no Win32, which is what lets it be the first thing built and run when a
-# Windows toolchain is being brought up, and what lets scripts/makedist-windows.sh diff its output
-# against the native build's. See tools/panelrender.cpp.
-# ---------------------------------------------------------------------------
-add_executable(panelrender
-    ${RPEDALS_ROOT}/tools/panelrender.cpp
-    ${RPEDALS_ROOT}/src/common/pedalface.cpp
-    # ...and the description layer, so the strip's binding text is measured against the real font
-    # like every other string. It brings in pluginterfaces' typedefs and nothing else.
-    ${RPEDALS_ROOT}/src/common/midilearn.cpp
-)
-target_include_directories(panelrender PRIVATE
-    ${RPEDALS_ROOT}/src ${RPEDALS_ROOT}/deps ${RPEDALS_ROOT}/vst3sdk)
-target_link_libraries(panelrender PRIVATE PedalsGfx pluginterfaces)
-target_compile_features(panelrender PUBLIC cxx_std_17)
-target_compile_options(panelrender PRIVATE -Wall -Wextra)
-
-# ---------------------------------------------------------------------------
-# pedalcheck — the DSP proofs. Links the pedal headers directly: no VST3, no host, no audio
-# device, so it runs anywhere the compiler does. See tools/pedalcheck.cpp for what the two kinds
-# of check are for.
-# ---------------------------------------------------------------------------
-add_executable(pedalcheck ${RPEDALS_ROOT}/tools/pedalcheck.cpp)
-target_include_directories(pedalcheck PRIVATE
-    ${RPEDALS_ROOT}/src ${RPEDALS_ROOT}/deps ${RPEDALS_ROOT}/vst3sdk)
-target_compile_features(pedalcheck PUBLIC cxx_std_17)
-# -ffast-math, and it is NOT optional: the golden hashes were recorded from a build that had it,
-# and the plug-ins are compiled with it. A check built without it would be checking different
-# arithmetic from the one that ships.
-target_compile_options(pedalcheck PRIVATE -ffast-math -Wall -Wextra)
 
 # ---------------------------------------------------------------------------
 # The five JACK standalones — each pedal playable without a DAW.
@@ -405,9 +434,10 @@ target_compile_options(pedalcheck PRIVATE -ffast-math -Wall -Wextra)
 # step with the first.
 #
 # Linux only, and only when JACK's development headers are present: a standalone is a convenience,
-# not the product, and its absence must never stop the plug-ins from building.
+# not the product, and its absence must never stop the plug-ins from building. RPEDALS_BUILD_STANDALONES
+# turns them off for a parent project that embeds this tree and ships only the bundles.
 # ---------------------------------------------------------------------------
-if(NOT RPEDALS_WINDOWS)
+if(RPEDALS_BUILD_STANDALONES AND NOT RPEDALS_WINDOWS)
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
         pkg_check_modules(RPEDALS_JACK QUIET jack)

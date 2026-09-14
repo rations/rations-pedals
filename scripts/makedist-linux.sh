@@ -479,10 +479,28 @@ Licence
 MIT. See LICENSE, and NOTICE for third-party attribution.
 EOF
 
+# --- one modification time, and a deterministic archive ----------------------
+# THE SAME FIX AS THE WINDOWS SCRIPT'S, for the same reason and found the same way: two runs of
+# this script minutes apart produced tarballs that differed as whole files even where every member
+# was byte-identical. Three separate things carry a clock or an environment into a .tar.gz and all
+# three have to be told not to:
+#
+#   * every member's mtime, which is the moment cp staged it;
+#   * the member ORDER, which is readdir order and is not stable;
+#   * the owner and group names, which are whoever ran the script;
+#   * and gzip's own header, which stores the timestamp of the file it compressed unless -n.
+#
+# The mtime is the commit this was built from -- deterministic and meaningful, rather than "now".
+# A tree with no git falls back to a fixed constant, because "now" is the bug.
+SOURCE_EPOCH="$(git -C "$REPO" show -s --format=%ct HEAD 2>/dev/null || true)"
+[ -n "$SOURCE_EPOCH" ] || SOURCE_EPOCH=1000000000
+find "$PKGDIR" -exec touch -h -d "@$SOURCE_EPOCH" {} +
+
 mkdir -p "$REPO/dist"
 TARBALL="$REPO/dist/RationsPedals-${VERSION}-linux-${ARCH}.tar.gz"
 rm -f "$TARBALL"
-tar -czf "$TARBALL" -C "$STAGEDIR" "RationsPedals-${VERSION}"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_EPOCH" \
+    -cf - -C "$STAGEDIR" "RationsPedals-${VERSION}" | gzip -n > "$TARBALL"
 
 echo ""
 echo "Packaged: $TARBALL"

@@ -66,9 +66,30 @@ set(ENV{PKG_CONFIG_SYSROOT_DIR} "")
 # --no-undefined mirrors what the SDK's SMTG_PlatformToolset.cmake asks for on
 # MinGW; it is repeated here because that file sets it with a non-FORCE
 # CACHE set(), which cannot overwrite a value already seeded from _INIT.
-set(CMAKE_EXE_LINKER_FLAGS_INIT    "-static")
-set(CMAKE_SHARED_LINKER_FLAGS_INIT "-static -Wl,--no-undefined")
-set(CMAKE_MODULE_LINKER_FLAGS_INIT "-static -Wl,--no-undefined")
+#
+# --no-insert-timestamp is what makes the Windows build REPRODUCIBLE, and
+# without it this project has no usable "the binaries did not move" gate on this
+# platform at all. binutils writes the wall-clock second of the link into the PE
+# header's TimeDateStamp by default, so two builds of one tree with one
+# toolchain differ -- in that field and in the checksum covering it, and in
+# nothing else. objdump -p reads the field back as the minute each link
+# happened. This flag makes it zero.
+#
+# IT IS ONLY HALF THE FIX, and the other half is in scripts/makedist-windows.sh:
+# `strip` REWRITES that field with a fresh wall-clock value as it rewrites the
+# file, so the stripped copy that ships moves again even when the link did not.
+# Measured: two strips of one input four seconds apart differ in exactly two
+# bytes, and those two bytes are the low half of the stamp. There is no strip
+# flag for it; the packaging script puts the field back and asserts it.
+#
+# NOTE FOR AN EXISTING BUILD DIRECTORY: _INIT variables seed the cache on the
+# FIRST configure only. A build-win created before this line keeps its clock
+# however often it is re-configured, and the only cure is deleting it. The
+# packaging script asserts the field rather than trusting the flag reached the
+# build, so a stale directory fails loudly instead of shipping.
+set(CMAKE_EXE_LINKER_FLAGS_INIT    "-static -Wl,--no-insert-timestamp")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "-static -Wl,--no-undefined -Wl,--no-insert-timestamp")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "-static -Wl,--no-undefined -Wl,--no-insert-timestamp")
 
 # Run cross-built test/tool executables under Wine. This is what lets the
 # offline render and the SDK's validator/moduleinfotool be driven from the

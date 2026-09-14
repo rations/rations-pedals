@@ -101,6 +101,82 @@ PKGDIR="$STAGEDIR/RationsPedals-${VERSION}"
 mkdir -p "$PKGDIR"
 trap 'rm -rf "$STAGEDIR"' EXIT
 
+# --- PE reproducibility ------------------------------------------------------
+# THE LINKER ZEROES THE TIMESTAMP AND `strip` PUTS IT BACK.
+#
+# cmake/toolchain-mingw-w64.cmake passes -Wl,--no-insert-timestamp, so the bundles in the build
+# tree carry a COFF TimeDateStamp of 0. Then this script runs `strip --strip-unneeded` on its
+# staged copies, and binutils writes a FRESH WALL-CLOCK VALUE into that field as it rewrites each
+# file. Measured: two strips of one input four seconds apart produce two files differing in exactly
+# two bytes, and those two bytes are the low half of the stamp.
+#
+# So the artefacts that SHIP were never byte-reproducible even once the linker flag was in place --
+# only the ones in the build tree were, and "build it again and compare every byte" did not reach
+# the thing it verifies. There is no strip flag for this; the field has to be put back afterwards.
+#
+# WHY THE CHECKSUM IS RECOMPUTED RATHER THAN LEFT. binutils computes the PE checksum over the file
+# it wrote, stamp included, so zeroing four bytes afterwards leaves it stale. The algorithm is the
+# documented one -- 16-bit ones-complement sum over the whole file with the checksum field itself
+# read as zero, plus the file length -- and this implementation was validated by recomputing the
+# checksum binutils had just written on two real binaries and getting the same value back, before
+# it was ever used to write one.
+pe_derandomise() {
+  python3 - "$1" <<'PYEOF'
+import struct, sys
+
+path = sys.argv[1]
+with open(path, 'rb') as fh:
+    d = bytearray(fh.read())
+
+e_lfanew = struct.unpack_from('<I', d, 0x3c)[0]
+if d[e_lfanew:e_lfanew + 4] != b'PE\0\0':
+    sys.exit("not a PE file: %s" % path)
+
+stamp_off = e_lfanew + 4 + 4          # COFF header, TimeDateStamp
+cksum_off = e_lfanew + 24 + 64        # optional header, CheckSum
+struct.pack_into('<I', d, stamp_off, 0)
+struct.pack_into('<I', d, cksum_off, 0)
+
+total = 0
+pad = bytes(d) + (b'\0' if len(d) & 1 else b'')
+for i in range(0, len(pad), 2):
+    if i == cksum_off or i == cksum_off + 2:
+        continue
+    total += struct.unpack_from('<H', pad, i)[0]
+    total = (total & 0xffff) + (total >> 16)
+total = (total & 0xffff) + (total >> 16)
+struct.pack_into('<I', d, cksum_off, (total + len(d)) & 0xffffffff)
+
+with open(path, 'wb') as fh:
+    fh.write(d)
+PYEOF
+}
+
+# Read the COFF header's TimeDateStamp -- the one that moves -- out of the BYTES.
+#
+# `objdump -p` prints two fields whose labels differ by one word: "Time/Date" is this one, and
+# "Time/Date stamp" is the DEBUG DIRECTORY's, which the linker flag really does zero and which
+# therefore reads 0 on a binary whose COFF stamp is live. A gate written against the wrong one
+# passes on a non-reproducible file. Reading the bytes leaves no label to get wrong and no locale
+# to render a date in.
+pe_assert_no_timestamp() {
+  local exe="$1" label="$2" stamp
+  stamp="$(python3 - "$exe" <<'PYEOF'
+import struct, sys
+with open(sys.argv[1], 'rb') as fh:
+    d = fh.read()
+e = struct.unpack_from('<I', d, 0x3c)[0]
+print(struct.unpack_from('<I', d, e + 8)[0])
+PYEOF
+)"
+  if [ "$stamp" != "0" ]; then
+    echo "$label carries a COFF TimeDateStamp of $stamp, so this build is not reproducible." >&2
+    echo "-Wl,--no-insert-timestamp seeds the cache from the toolchain on the FIRST configure" >&2
+    echo "only: delete $BUILD and re-run." >&2
+    exit 1
+  fi
+}
+
 # --- the five bundles -------------------------------------------------------
 for pedal in "${PEDALS[@]}"; do
   name="${TARGET[$pedal]}"
@@ -181,6 +257,9 @@ for pedal in "${PEDALS[@]}"; do
   done
 
   "$STRIP" --strip-unneeded "$DLL"
+  # ...and put back the reproducibility strip just took away. See pe_derandomise above.
+  pe_derandomise "$DLL"
+  pe_assert_no_timestamp "$DLL" "${name}.vst3"
 
   # IMPORTS. Nothing but Windows' own DLLs may appear here.
   #
@@ -527,6 +606,28 @@ for this build than for the Linux one, because each Windows plug-in statically
 links cairo, pixman, FreeType, libpng and zlib and therefore redistributes them.
 EOF
 
+# --- one modification time for the whole staged tree ------------------------
+# THE LAST THING IN THIS RELEASE THAT MOVED BETWEEN RUNS, and neither place that consumes it was
+# obvious. Measured: with the PE stamps fixed, two runs of this script three seconds apart produced
+# 47 identical files and one that differed -- RationsPedals-install.exe -- and two ZIPs that
+# differed as whole files even where every member matched.
+#
+#   * NSIS defaults to SetDateSave ON, so `File` stores each staged file's last-write time inside
+#     the installer. The staged copies are made fresh by cp -r on every run, so those times are
+#     the moment the script ran and the compressed payload differs even when every byte of every
+#     bundle is identical.
+#   * python3 -m zipfile stores mtimes in the local and central directory headers, for the same
+#     reason and with the same effect on the archive as a whole.
+#
+# Normalising here fixes both at once and needs no change to the .nsi. The value is the commit
+# this was built from, so it is deterministic AND meaningful -- an installed file dated when the
+# source was written rather than when someone happened to run a script. A tree with no git (a
+# source export) falls back to a fixed constant rather than to "now", because "now" is the bug.
+SOURCE_EPOCH="$(git -C "$REPO" show -s --format=%ct HEAD 2>/dev/null || true)"
+[ -n "$SOURCE_EPOCH" ] || SOURCE_EPOCH=1000000000
+stamp_tree() { find "$1" -exec touch -h -d "@$SOURCE_EPOCH" {} + ; }
+stamp_tree "$PKGDIR"
+
 # --- the installer ----------------------------------------------------------
 # Built LAST, from the staged tree, so the .exe carries exactly the bundles that are also loose in
 # the ZIP - the same stripped binaries and the same moduleinfo.json. Building it from build-win
@@ -560,6 +661,10 @@ else
     exit 1
   fi
 fi
+
+# Again, because the installer was written into the staged tree after the first pass and carries
+# the mtime of the moment makensis finished.
+stamp_tree "$PKGDIR"
 
 mkdir -p "$REPO/dist"
 ZIP="$REPO/dist/RationsPedals-${VERSION}-windows-x86_64.zip"

@@ -358,11 +358,33 @@ protected:
                 // spends longer in the subnormal range than anything else, and whatever it hands
                 // on goes straight into the plug-in's output buffer. Same lesson as the Flanger's,
                 // found the same way.
-                double yl = xl + mix * (wl - xl);
+                // THE DRY PATH IS A WIRE. Mix scales the wet onto it and never subtracts from it.
+                //
+                // This was a crossfade, (1-mix)*dry + mix*wet, and the knob was reported as doing
+                // almost nothing until halfway and then changing drastically. Measured, that is
+                // exactly what it did, and for a reason the arithmetic makes plain: the reverb
+                // tail grows by 18 dB over the whole knob but 12 dB of that is spent in the first
+                // quarter, so the top half adds only about 6 dB of tail — while the dry
+                // coefficient runs 0.5 down to zero over the same travel. Past halfway the control
+                // had nearly stopped adding reverb and was mostly removing the guitar, which is a
+                // drastic change to the sound made by a knob that appears to be about reverb.
+                //
+                // A single Mix knob is this project's own decision, not something ported: Freeverb
+                // has no such control (independent Wet and Dry faders, both in dB, with
+                // `initialdry = 0`), WDL's engine has none at all, and PASP's Freeverb chapter does
+                // not discuss a mix. What the references do agree on is the structure — wet and dry
+                // are INDEPENDENT — and a crossfade is precisely the arrangement that they are not.
+                //
+                // The cost, measured at Decay 10 on a full-scale input: peak reaches +4.1 dB on a
+                // sine and +10.4 dB on white noise at Mix 100 %. That is the price of the dry being
+                // a wire, it is what a blend knob on a reverb pedal does, and the alternative is
+                // the fault above. At Mix 0 the wet term is exactly zero, so the dry still passes
+                // sample for sample.
+                double yl = xl + mix * wl;
                 denormal_fix_double(&yl);
                 l[j] = yl;
                 if (r) {
-                    double yr = xr + mix * (wr - xr);
+                    double yr = xr + mix * wr;
                     denormal_fix_double(&yr);
                     r[j] = yr;
                 }

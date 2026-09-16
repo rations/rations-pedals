@@ -922,8 +922,47 @@ void checkReverb()
               fmt("(worst |wet-dry| %.3g)", worst).c_str());
     }
 
+    // THE DRY PATH IS A WIRE AT EVERY MIX SETTING, which is what the Mix knob was changed to
+    // guarantee. It used to be a crossfade, so the top half of the knob spent its travel deleting
+    // the guitar rather than adding reverb; the check that this does not come back is that the dry
+    // signal arrives at unity however far the knob is turned.
+    //
+    // Measured on the ARRIVAL, not on the whole buffer: an impulse with Pre-delay at 50 ms cannot
+    // have any wet in it for 50 ms, so the first sample is dry and nothing else. Comparing whole
+    // buffers would only say the output differs, which it must.
+    {
+        bool allUnity = true;
+        double worst = 0.0, worstMix = 0.0;
+        for (double mix : {0.0, 25.0, 50.0, 75.0, 100.0}) {
+            Reverb v;
+            v.prepare(kRate, kBlock);
+            v.setEngaged(true);
+            std::vector<double> l(static_cast<size_t>(kRate), 0.0);
+            // Placed PAST the footswitch's 8 ms engage ramp (384 samples), so the pedal is fully
+            // in circuit when the impulse arrives and the ramp cannot stand in for the dry term.
+            // Nothing is written before it, so no wet from an earlier sample can reach it either.
+            const size_t at = 1000;
+            l[at] = 1.0;
+            std::vector<double> r = l;
+            const double p[] = {1.0, 5.0, 5.0, 50.0, mix};
+            run(v, l, &r, p);
+            const double err = std::fabs(l[at] - 1.0);
+            if (err > worst) {
+                worst = err;
+                worstMix = mix;
+            }
+            if (err > 1e-12)
+                allUnity = false;
+        }
+        check(allUnity, "the dry signal passes at unity at every Mix setting",
+              fmt("(worst error %.3g, at Mix %.0f %%)", worst, worstMix).c_str());
+    }
+
     const double golden[] = {1.0, 6.5, 7.0, 45.0, 60.0};
-    checkGolden<Reverb>("Reverb", golden, true, 0x0AD37B196EE6ED56ull);
+    // MOVED DELIBERATELY. Mix was a crossfade and is now dry + mix*wet, so that the knob adds
+    // reverb instead of removing the guitar; these golden settings use Mix 60 %, so the stream
+    // changes. Nothing else about the pedal moved.
+    checkGolden<Reverb>("Reverb", golden, true, 0x513A0300FB1F3BDDull);
 }
 
 //--- the engage ramp, which is the base class's and is therefore checked once -------------------

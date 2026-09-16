@@ -30,6 +30,52 @@ namespace Rations
 
 template <typename Traits> class PedalView;
 
+//------------------------------------------------------------------------------------------------
+// A RangeParameter whose dial is a RATIO rather than a sum — the Chorus's Rate, and anything else
+// whose table row sets `log`.
+//
+// Vst::RangeParameter is linear in toPlain/toNormalized and has no hook for a curve, so the two
+// conversions are overridden. They are overridden by CALLING pedalPlain/pedalNorm rather than by
+// repeating the formula, which is the same reason those two functions exist at all: the processor
+// converts with them on the audio side, and a second spelling here is a second thing to keep in
+// step. toString is not overridden because RangeParameter's already routes through toPlain, so
+// the host's readout and `precision` follow for free.
+class LogRangeParameter : public Steinberg::Vst::RangeParameter
+{
+public:
+    LogRangeParameter(const Steinberg::Vst::TChar *title, Steinberg::Vst::ParamID id,
+                      const Steinberg::Vst::TChar *units, const PedalParamSpec &spec)
+        : Steinberg::Vst::RangeParameter(title, id, units, spec.min, spec.max, spec.def, 0,
+                                         Steinberg::Vst::ParameterInfo::kCanAutomate),
+          mSpec(spec)
+    {
+        // RangeParameter's constructor normalized the default LINEARLY, so both the current
+        // value and the DECLARED default are sitting at the wrong place on this curve. Both have
+        // to move: info.defaultNormalizedValue is what a host resets the control to, so leaving
+        // it would make "reset to default" land on 0.23 Hz where the table says 0.8.
+        //
+        // Found by the amp's LV2 ttlgen, which cross-checks every port's declared default against
+        // the controller's — nothing in this tree checks it, and the editor would have looked
+        // right because it reads the current value rather than the declared one.
+        info.defaultNormalizedValue = pedalNorm(spec, spec.def);
+        setNormalized(info.defaultNormalizedValue);
+    }
+
+    Steinberg::Vst::ParamValue toPlain(Steinberg::Vst::ParamValue norm) const SMTG_OVERRIDE
+    {
+        return pedalPlain(mSpec, norm);
+    }
+    Steinberg::Vst::ParamValue toNormalized(Steinberg::Vst::ParamValue plain) const SMTG_OVERRIDE
+    {
+        return pedalNorm(mSpec, plain);
+    }
+
+private:
+    // A reference into the pedal's own constexpr table, which has static storage duration and
+    // outlives every controller. Not a copy: there is one table and it is the single truth.
+    const PedalParamSpec &mSpec;
+};
+
 template <typename Traits>
 class PedalController : public Steinberg::Vst::EditControllerEx1,
                         public Steinberg::Vst::IMidiMapping
@@ -98,8 +144,10 @@ public:
                     break;
                 }
                 case PedalParamKind::Range: {
-                    auto *range = new RangeParameter(title, spec.id, units, spec.min, spec.max,
-                                                     spec.def, 0, ParameterInfo::kCanAutomate);
+                    RangeParameter *range =
+                        spec.log ? new LogRangeParameter(title, spec.id, units, spec)
+                                 : new RangeParameter(title, spec.id, units, spec.min, spec.max,
+                                                      spec.def, 0, ParameterInfo::kCanAutomate);
                     range->setPrecision(spec.precision);
                     parameters.addParameter(range);
                     break;

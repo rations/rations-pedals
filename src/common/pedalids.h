@@ -85,6 +85,17 @@ struct PedalParamSpec {
     PedalParamKind kind;
     double min, max, def;
     int precision;
+
+    // Range controls only: map the dial EXPONENTIALLY rather than linearly, so that equal
+    // fractions of the dial are equal RATIOS of the value. A rate, a frequency and a time are all
+    // heard that way — a knob that spends half its travel between 5 and 10 Hz is a knob whose
+    // useful half is the first inch of it.
+    //
+    // A trailing member with a default rather than a new PedalParamKind, because a log Range is
+    // still a knob: a new kind would have to be threaded through knobParam(), miniParam() and
+    // formatValue() to tell them so, and every one of those would be answering "yes, a knob".
+    // The default keeps every existing row in the five tables below initialising unchanged.
+    bool log = false;
 };
 
 // A pedal's table, passed around as one value. Not std::span: this has to be usable in constexpr
@@ -131,7 +142,15 @@ inline constexpr PedalParamSpec kBoostParamArray[] = {
 
 inline constexpr PedalParamSpec kChorusParamArray[] = {
     {kSwitchId, "Footswitch", "", nullptr, PedalParamKind::Toggle, 0, 1, 0, 0},
-    {kKnobIdFirst + 0, "Rate", "Rate", "Hz", PedalParamKind::Range, 0.1, 10.0, 0.8, 2},
+    // Rate is LOGARITHMIC and stops at 3 Hz, and both halves of that are answers to the same
+    // fault. Linear over 0.1-10 Hz put the 0.8 Hz default at 7 % of the dial, so the whole useful
+    // region was the first inch of travel and a barely visible move doubled the rate. And because
+    // delay modulation shifts pitch by the DERIVATIVE of the delay, rate is also what sets how far
+    // the pitch moves: measured at Depth 50 %, the old dial reached +-56 cents at a quarter turn
+    // and +-205 cents at the end, against +-17 at the default. Above 3 Hz a chorus is a warble
+    // whatever the excursion, so the range stops there; Chorus::processImpl caps the excursion so
+    // that the rest of the range stays usable too.
+    {kKnobIdFirst + 0, "Rate", "Rate", "Hz", PedalParamKind::Range, 0.1, 3.0, 0.8, 2, true},
     {kKnobIdFirst + 1, "Depth", "Depth", "%", PedalParamKind::Range, 0, 100, 50, 0},
     {kKnobIdFirst + 2, "Mix", "Mix", "%", PedalParamKind::Range, 0, 100, 50, 0},
 };
@@ -204,6 +223,17 @@ inline constexpr int paramIndex(const ParamList &list, Steinberg::Vst::ParamID i
 inline constexpr bool startsWithSwitch(const ParamList &list)
 {
     return list.count > 0 && list[0].id == kSwitchId && list[0].kind == PedalParamKind::Toggle;
+}
+
+// A log control maps the dial onto a RATIO, so its minimum has to be positive and its maximum
+// has to be above it. Both are cheap to state as build errors; pedalPlain would otherwise return
+// a NaN or an infinity for a perfectly ordinary-looking table row.
+inline constexpr bool logRangesArePositive(const ParamList &list)
+{
+    for (int i = 0; i < list.count; ++i)
+        if (list[i].log && !(list[i].min > 0.0 && list[i].max > list[i].min))
+            return false;
+    return true;
 }
 
 // Ids must ascend and be unique, which is what makes "appended, never renumbered" checkable
@@ -279,6 +309,10 @@ inline double pedalPlain(const PedalParamSpec &spec, double norm)
     norm = norm < 0.0 ? 0.0 : (norm > 1.0 ? 1.0 : norm);
     if (spec.kind == PedalParamKind::List)
         return std::floor(norm * (spec.max - spec.min) + 0.5) + spec.min;
+    // Equal fractions of the dial are equal RATIOS of the value. Asserted below to have a
+    // positive minimum, because a ratio through zero is not a ratio.
+    if (spec.log)
+        return spec.min * std::pow(spec.max / spec.min, norm);
     return spec.min + norm * (spec.max - spec.min);
 }
 inline double pedalNorm(const PedalParamSpec &spec, double plain)
@@ -286,6 +320,14 @@ inline double pedalNorm(const PedalParamSpec &spec, double plain)
     const double span = spec.max - spec.min;
     if (span <= 0.0)
         return 0.0;
+    if (spec.log) {
+        // The inverse of pedalPlain's ratio map. Guarded rather than trusted: `plain` reaches
+        // here from a host and from state, and log() of a non-positive number is not a number.
+        if (!(plain > 0.0))
+            return 0.0;
+        const double l = std::log(plain / spec.min) / std::log(spec.max / spec.min);
+        return l < 0.0 ? 0.0 : (l > 1.0 ? 1.0 : l);
+    }
     const double n = (plain - spec.min) / span;
     return n < 0.0 ? 0.0 : (n > 1.0 ? 1.0 : n);
 }
@@ -296,7 +338,8 @@ inline double pedalNorm(const PedalParamSpec &spec, double plain)
     static_assert(startsWithSwitch(list), name " must start with its footswitch");                 \
     static_assert(idsAscend(list), name " ids must ascend and be unique");                         \
     static_assert(list.count <= kParamStateMax, name " is longer than a state blob may be");       \
-    static_assert(knobCount(list) >= 3, name " has fewer knobs than any enclosure face carries")
+    static_assert(knobCount(list) >= 3, name " has fewer knobs than any enclosure face carries");  \
+    static_assert(logRangesArePositive(list), name " has a log control whose range crosses zero")
 
 RATIONS_CHECK_TABLE(kBoostParams, "Boost");
 RATIONS_CHECK_TABLE(kChorusParams, "Chorus");

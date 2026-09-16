@@ -39,6 +39,8 @@
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
+#include "common/pedalids.h"
+
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
 #include <cmath>
@@ -105,6 +107,78 @@ Steinberg::Vst::ParamID findFootswitch(Vst::IEditController *controller, bool &f
         }
     }
     return 0;
+}
+
+// Every parameter's DECLARED default must be the default the pedal's table says it has.
+//
+// `defaultNormalizedValue` is what a host writes back when the user asks for a reset, and it is a
+// separate field from whatever the parameter currently holds — so a control can look right in the
+// editor, automate correctly, and still reset to the wrong value.
+//
+// This exists because that bug was shipped and caught elsewhere. The Chorus's Rate became a
+// logarithmic control, Vst::RangeParameter's constructor normalizes a default LINEARLY, and the
+// declared default was left sitting at the linear position: a reset would have moved Rate to
+// 0.23 Hz where its table says 0.8. The amp's LV2 ttlgen makes this comparison and is what found
+// it; nothing in this tree did.
+//
+// UNLIKE findFootswitch, THIS ONE READS pedalids.h, and the difference is the question being
+// asked. Finding the footswitch is asking whether a host can discover a control, so doing it
+// through our own header would be answering our own question. Checking a declared default is
+// asking whether the plug-in agrees with the design, and the design is that table — there is
+// nothing else to compare against.
+const Rations::ParamList *tableFor(const std::string &name)
+{
+    if (name.find("Boost") != std::string::npos)
+        return &Rations::kBoostParams;
+    if (name.find("Chorus") != std::string::npos)
+        return &Rations::kChorusParams;
+    if (name.find("Flanger") != std::string::npos)
+        return &Rations::kFlangerParams;
+    if (name.find("Delay") != std::string::npos)
+        return &Rations::kDelayParams;
+    if (name.find("Reverb") != std::string::npos)
+        return &Rations::kReverbParams;
+    return nullptr;
+}
+
+int checkDefaults(Vst::IEditController *controller, const std::string &name)
+{
+    const Rations::ParamList *table = tableFor(name);
+    if (!table) {
+        printf("    FAIL  %-16s is not a pedal this tool has a table for\n", name.c_str());
+        return 1;
+    }
+    int bad = 0;
+    for (int i = 0; i < table->count; ++i) {
+        const Rations::PedalParamSpec &spec = (*table)[i];
+        Vst::ParameterInfo info{};
+        bool found = false;
+        const Steinberg::int32 count = controller->getParameterCount();
+        for (Steinberg::int32 k = 0; k < count && !found; ++k) {
+            Vst::ParameterInfo probe{};
+            if (controller->getParameterInfo(k, probe) == kResultOk && probe.id == spec.id) {
+                info = probe;
+                found = true;
+            }
+        }
+        if (!found) {
+            printf("    FAIL  %-16s declares no parameter %u (%s)\n", name.c_str(), spec.id,
+                   spec.title);
+            ++bad;
+            continue;
+        }
+        // Compared in PLAIN units, which is where the table states it and where a disagreement
+        // about the curve actually shows. The tolerance is relative because a plain value may be
+        // 0.1 Hz or 2000 ms.
+        const double got = controller->normalizedParamToPlain(spec.id, info.defaultNormalizedValue);
+        const double tol = std::max(1e-9, std::fabs(spec.def) * 1e-9);
+        if (std::fabs(got - spec.def) > tol) {
+            printf("    FAIL  %-16s %s resets to %g, but its table says %g\n", name.c_str(),
+                   spec.title, got, spec.def);
+            ++bad;
+        }
+    }
+    return bad;
 }
 
 // Mono in, stereo out, then read back what the plug-in agreed to rather than trusting the request
@@ -352,6 +426,12 @@ int main(int argc, char **argv)
         } else {
             fail(p->name.c_str(), "offered no editor view");
         }
+
+        const int badDefaults = checkDefaults(p->controller, p->name);
+        if (badDefaults == 0)
+            printf("    ok    %-16s every control resets to its table default\n", p->name.c_str());
+        else
+            gFailures += badDefaults;
     }
 
     // --- tear down, still all together ------------------------------------------------------

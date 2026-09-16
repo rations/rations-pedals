@@ -598,8 +598,93 @@ void checkChorus()
         check(peak(l) > 0.0, "runs on a mono chain", "");
     }
 
+    // THE PITCH CEILING, which is the whole of what the Rate knob was fixed by.
+    //
+    // Delay modulation shifts pitch by the derivative of the delay, so peak detune is 2*pi*f*A.
+    // With A set by Depth alone that grew without limit as Rate rose, and most of the Rate knob
+    // was unusable because of it. Chorus::processImpl now bounds A so the detune cannot exceed
+    // chorusdef::kMaxDetuneCents; this is the check that the bound actually holds, because a
+    // ceiling stated only in a comment is a ceiling that stops being true silently.
+    //
+    // MEASURED FROM THE OUTSIDE, through process(), rather than by reading the pedal's own
+    // excursion back: what matters is the delay a signal actually experiences, and a test that
+    // asked the object what it intended would pass even if the intent never reached the audio.
+    // An impulse every 20 ms is sent through at Mix 100 %, and the arrival of the NEAR tap's echo
+    // IS that tap's delay at that instant; both taps share one excursion, so one of them settles
+    // the question.
+    //
+    // The near tap is found as the FIRST echo past 5 ms rather than as the largest in a window.
+    // A window cannot do it: at Depth 100 % the near tap reaches 14 ms and the far tap starts at
+    // 14 ms, so there is no boundary between them, and a window wide enough to hold the near tap
+    // at its longest catches the far tap at its shortest and reads an excursion nobody asked for.
+    // That is not hypothetical — it is what this check did when it was first written, and it
+    // reported 38 cents against a 35 cent ceiling that the pedal was in fact holding.
+    {
+        const int kSpacing = 960; // 20 ms at 48 kHz
+        double worstCents = 0.0, worstRate = 0.0, worstDepth = 0.0;
+        for (double rate : {0.1, 0.4, 0.8, 1.5, 2.3, 3.0}) {
+            for (double depth : {25.0, 50.0, 75.0, 100.0}) {
+                Chorus c;
+                c.prepare(kRate, kBlock);
+                c.setEngaged(true);
+                // Long enough for at least two whole LFO turns even at the slowest rate, so the
+                // excursion measured really is the peak one and not part of a cycle.
+                const int n = static_cast<int>(kRate * 2.5 / rate) + kSpacing * 4;
+                std::vector<double> l(static_cast<size_t>(n), 0.0);
+                for (int i = 0; i < n; i += kSpacing)
+                    l[static_cast<size_t>(i)] = 1.0;
+                const double p[] = {1.0, rate, depth, 100.0};
+                run(c, l, nullptr, p);
+
+                double lo = 1e9, hi = -1e9;
+                const int from = static_cast<int>(kRate * 0.005); // 5 ms
+                const int to = static_cast<int>(kRate * 0.015);   // 15 ms
+                // Well above the interpolator's ringing either side of an echo and well below the
+                // echo itself, which arrives at half the impulse's height (two taps, summed).
+                const double thresh = 0.05;
+                // The first impulse is skipped: the line is still empty behind it.
+                for (int i = kSpacing; i + to < n; i += kSpacing) {
+                    int k = from;
+                    while (k <= to && std::fabs(l[static_cast<size_t>(i + k)]) < thresh)
+                        ++k;
+                    if (k > to)
+                        continue;
+                    // Walk to the top of this echo; the cubic read head spreads one sample over
+                    // four, so the first sample over the threshold is not the peak.
+                    while (k < to && std::fabs(l[static_cast<size_t>(i + k + 1)]) >
+                                         std::fabs(l[static_cast<size_t>(i + k)]))
+                        ++k;
+                    lo = std::min(lo, static_cast<double>(k));
+                    hi = std::max(hi, static_cast<double>(k));
+                }
+                if (hi < lo)
+                    continue;
+                const double a = (hi - lo) * 0.5;
+                const double cents = 1200.0 * std::log2(1.0 + a * 2.0 * M_PI * rate / kRate);
+                if (cents > worstCents) {
+                    worstCents = cents;
+                    worstRate = rate;
+                    worstDepth = depth;
+                }
+            }
+        }
+        // One sample of slack: the arrival is found to the nearest sample, so a true excursion of
+        // A can read as A + 0.5 at each end. At 3 Hz that is worth about 0.4 cents.
+        const double slack = 1200.0 * std::log2(1.0 + 1.0 * 2.0 * M_PI * 3.0 / kRate);
+        check(worstCents <= chorusdef::kMaxDetuneCents + slack,
+              "Rate cannot drive the pitch past the ceiling",
+              fmt("(worst %.1f cents, at Rate %.1f Hz and Depth %.0f %%)", worstCents, worstRate,
+                  worstDepth)
+                  .c_str());
+    }
+
     const double golden[] = {1.0, 2.3, 65.0, 40.0};
-    checkGolden<Chorus>("Chorus", golden, false, 0x91E022DE0A468313ull);
+    // MOVED DELIBERATELY. Rate used to set the pitch excursion without limit, so the knob was
+    // unusable above its first eighth; processImpl now bounds the excursion to
+    // chorusdef::kMaxDetuneCents. These golden settings are Rate 2.3 Hz at Depth 65 %, which is
+    // above the crossover, so the stream changes. Nothing else about the pedal moved, and the
+    // other four hashes are unchanged.
+    checkGolden<Chorus>("Chorus", golden, false, 0x31964D3D1458B63Dull);
 }
 
 //--- Flanger ------------------------------------------------------------------------------------

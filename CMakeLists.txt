@@ -14,7 +14,7 @@
 
 cmake_minimum_required(VERSION 3.25.0)
 
-project(rations-pedals VERSION 0.1.0)
+project(rations-pedals VERSION 0.2.0)
 
 set(RPEDALS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(RPEDALS_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})

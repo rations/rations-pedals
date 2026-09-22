@@ -71,6 +71,26 @@ if(RPEDALS_WINDOWS)
     add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+# WDL states, as a negative-sized typedef in deps/wdl/wdltypes.h, that plain `char` must be SIGNED:
+#
+#     typedef char wdl_assert_failed_unsigned_char[((char)-1) > 0 ? -1 : 1];
+#
+# That holds on x86 and does not hold on AArch64, where the procedure call standard makes plain
+# char unsigned. Delay, flanger and reverb all reach wdltypes.h through deps/wdl, so the whole
+# pedalboard fails to compile on ARM without this. WDL supplies the macro as the supported way to
+# say the assumption is not needed, which is why no upstream file is edited.
+#
+# Only four WDL headers are vendored here -- wdltypes.h, heapbuf.h, denormal.h and verbengine.h --
+# and every `char` in them is a cast for memcpy/memset, a `const char*` diagnostic string, a byte
+# in wdl_bswap_copy's byte-reversal buffer, or the truth value WDL_bool. None compares a char
+# against zero or sign-extends one. The assertion guards WDL's string and UTF-8 handling, and none
+# of that is vendored.
+#
+# Project-wide rather than per-target because the vendored WDL is reachable from the pedals, the
+# offline checks and the standalones alike, and one of those growing an include is not a thing to
+# rediscover as a build failure on a runner.
+add_compile_definitions(WDL_ALLOW_UNSIGNED_DEFAULT_CHAR)
+
 # ---------------------------------------------------------------------------
 # The VST 3 SDK.
 #

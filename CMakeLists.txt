@@ -71,6 +71,26 @@ if(RPEDALS_WINDOWS)
     add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+# WDL states, as a negative-sized typedef in deps/wdl/wdltypes.h, that plain `char` must be SIGNED:
+#
+#     typedef char wdl_assert_failed_unsigned_char[((char)-1) > 0 ? -1 : 1];
+#
+# That holds on x86 and does not hold on AArch64, where the procedure call standard makes plain
+# char unsigned. Delay, flanger and reverb all reach wdltypes.h through deps/wdl, so the whole
+# pedalboard fails to compile on ARM without this. WDL supplies the macro as the supported way to
+# say the assumption is not needed, which is why no upstream file is edited.
+#
+# Only four WDL headers are vendored here -- wdltypes.h, heapbuf.h, denormal.h and verbengine.h --
+# and every `char` in them is a cast for memcpy/memset, a `const char*` diagnostic string, a byte
+# in wdl_bswap_copy's byte-reversal buffer, or the truth value WDL_bool. None compares a char
+# against zero or sign-extends one. The assertion guards WDL's string and UTF-8 handling, and none
+# of that is vendored.
+#
+# Project-wide rather than per-target because the vendored WDL is reachable from the pedals, the
+# offline checks and the standalones alike, and one of those growing an include is not a thing to
+# rediscover as a build failure on a runner.
+add_compile_definitions(WDL_ALLOW_UNSIGNED_DEFAULT_CHAR)
+
 # ---------------------------------------------------------------------------
 # The VST 3 SDK.
 #
@@ -291,6 +311,37 @@ foreach(_pedal IN LISTS RPEDALS_PEDALS)
         endif()
         set_target_properties(${_target} PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY "${_pkg_path}/${_pkg_contents}/${_win_arch}")
+    endif()
+
+    # The Linux architecture folder, asserted against a trap of a different shape.
+    #
+    # smtg_get_linux_architecture_name() reads the CROSS_COMPILE *environment variable* first and
+    # only falls back to `uname -m`, so the folder can end up named after the BUILD machine while
+    # the binary inside it is for the target. The bundle then configures, compiles, links and
+    # installs without a complaint and loads in no host on either architecture, because
+    # module_linux.cpp's loader builds the folder name from the running machine's uname().machine
+    # and looks only there.
+    #
+    # Read back from LIBRARY_OUTPUT_DIRECTORY, which is what the SDK actually used, rather than by
+    # calling its function again -- a second call would only re-derive the same guess.
+    if(NOT RPEDALS_WINDOWS)
+        get_target_property(_linux_outdir ${_target} LIBRARY_OUTPUT_DIRECTORY)
+        get_filename_component(_linux_arch "${_linux_outdir}" NAME)
+        if(NOT _linux_arch MATCHES "^(x86_64|aarch64)-linux$")
+            message(FATAL_ERROR
+                "[RationsPedals] the SDK chose architecture folder '${_linux_arch}', which is not "
+                "one these pedals ship. Expected 'x86_64-linux' or 'aarch64-linux'.")
+        endif()
+        if(NOT _linux_arch STREQUAL "${CMAKE_SYSTEM_PROCESSOR}-linux")
+            message(FATAL_ERROR
+                "[RationsPedals] the SDK chose architecture folder '${_linux_arch}', but CMake is "
+                "building for '${CMAKE_SYSTEM_PROCESSOR}'. The folder and the binary inside it "
+                "would name different architectures, and the bundle would load nowhere. The SDK "
+                "takes the folder from the CROSS_COMPILE environment variable if it is set and "
+                "from `uname -m` if it is not, so the two ways to reach here are a cross build "
+                "that never exported CROSS_COMPILE, and a native build that inherited a stale "
+                "one. Set it to your toolchain's prefix, or unset it and build natively.")
+        endif()
     endif()
 
     smtg_target_configure_version_file(${_target})
